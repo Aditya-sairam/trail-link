@@ -400,7 +400,7 @@ def parse_fhir_file(json_file_path: str) -> Patient:
 # Main function, just to test the parser locally.
 if __name__ == "__main__":
     # Example usage
-    file_path = "<preovide the path to json here>"
+    file_path = "/home/aditya/MlOps/trial-link/data/output/fhir/Lan153_Junko239_White193_11b21749-2d42-a3ae-5720-60ebcbbdb194.json"
     
     try:
         patient = parse_fhir_file(file_path)
