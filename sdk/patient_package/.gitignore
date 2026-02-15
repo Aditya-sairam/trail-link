@@ -1,0 +1,34 @@
+# Ignore FHIR JSON files in data folders
+data/incoming/*.json
+data/processed/*.json
+data/failed/*.json
+
+# Ignore parsed patient files
+parsed_patient.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
