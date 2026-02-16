@@ -1,0 +1,287 @@
+# TrialLink Data Pipeline
+
+Automated data pipeline that fetches clinical trial data from ClinicalTrials.gov, processes it into batched CSVs, and stores it in Google Cloud Storage. The pipeline runs on a GCE VM inside a Docker container with Apache Airflow orchestration.
+
+## Architecture
+
+```
+GitHub Push (pipelines/) → GitHub Actions → Builds Docker Image → Pushes to Artifact Registry → Updates VM Startup Script
+
+Cloud Scheduler (weekly) → Cloud Function → Starts GCE VM → VM pulls Docker image → Runs Airflow DAG → Uploads data to GCS → VM shuts down
+```
+
+## Pipeline Output
+
+```
+gs://<bucket>/raw/YYYY-MM-DD/batch_001/YYYY-MM-DD_batch_001.csv
+gs://<bucket>/raw/YYYY-MM-DD/batch_002/YYYY-MM-DD_batch_002.csv
+gs://<bucket>/raw/YYYY-MM-DD/batch_003/YYYY-MM-DD_batch_003.csv
+```
+
+Each CSV contains up to 1000 clinical trials with fields: NCT_ID, Title, Status, Conditions, Eligibility_Criteria, Interventions, Location info, Sponsor info, and more.
+
+---
+
+## Setup Guide (New Team Member)
+
+### Step 1: Get Repository Access
+
+1. Ask the repo owner to add you as a **collaborator** with write access
+2. Go to [GitHub Notifications](https://github.com/notifications) and **accept the invitation**
+3. Clone the repo:
+```bash
+git clone https://github.com/Aditya-sairam/trail-link.git
+cd trail-link
+```
+4. Switch to the working branch:
+```bash
+git checkout datapipeline-swarali
+```
+
+### Step 2: Create a GCP Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project (e.g., `datapipeline-yourname`)
+3. Enable billing on the project
+4. Note your **Project ID** (not the project number)
+
+### Step 3: Install Prerequisites
+
+#### gcloud CLI
+```bash
+# macOS (manual install — recommended over brew)
+curl https://sdk.cloud.google.com | bash
+source ~/.zshrc
+
+# If you have Python version issues, set:
+export CLOUDSDK_PYTHON=/opt/homebrew/opt/python@3.10/bin/python3.10
+echo 'export CLOUDSDK_PYTHON=/opt/homebrew/opt/python@3.10/bin/python3.10' >> ~/.zshrc
+```
+
+#### Pulumi CLI
+```bash
+brew install pulumi/tap/pulumi
+```
+
+#### Python 3.11+
+```bash
+python3 --version  # Verify you have 3.11+
+```
+
+### Step 4: Authenticate gcloud
+
+```bash
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project <YOUR_PROJECT_ID>
+```
+
+### Step 5: Run the Setup Script
+
+This script creates all required GCP resources and permissions in one go.
+
+Edit `setup_github_oidc.sh` at the root of the repo — change `GCP_PROJECT_ID` to your project ID:
+
+```bash
+GCP_PROJECT_ID="your-gcp-project-id"   # ← Change this
+```
+
+Then run:
+
+```bash
+chmod +x setup_github_oidc.sh
+./setup_github_oidc.sh
+```
+
+The script will:
+- Create a Workload Identity Pool & Provider (for GitHub Actions auth)
+- Grant all required IAM permissions
+- Enable all required GCP APIs
+- Print the GitHub Variables you need to set
+
+### Step 6: Add GitHub Variables
+
+Go to: [Repository Variables](https://github.com/Aditya-sairam/trail-link/settings/variables/actions)
+
+Add these **repository variables** (prefix with your name in uppercase):
+
+| Variable Name | Value (from script output) |
+|---|---|
+| `YOURNAME_GCP_PROJECT_ID` | Your GCP project ID |
+| `YOURNAME_GCP_REGION` | `us-central1` |
+| `YOURNAME_GCP_SA_EMAIL` | `triallink-pipeline-sa@<project>.iam.gserviceaccount.com` |
+| `YOURNAME_WIF_PROVIDER` | `projects/<number>/locations/global/...` |
+| `YOURNAME_GCP_VM_NAME` | `triallink-pipeline-vm` |
+| `YOURNAME_GCP_VM_ZONE` | `us-central1-a` |
+
+### Step 7: Add Yourself to env-mapping.json
+
+Edit `env-mapping.json` at the root of the repo:
+
+```json
+{
+  "ItSwara": "SWARALI",
+  "YourGitHubUsername": "YOURNAME"
+}
+```
+
+The key is your **exact GitHub username**, the value is the **prefix** you used for the variables in Step 6.
+
+### Step 8: Deploy Infrastructure with Pulumi
+
+```bash
+cd infra/datapipeline_stacks
+
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Initialize Pulumi
+pulumi login --local
+pulumi stack init dev
+pulumi config set gcp:project <YOUR_PROJECT_ID>
+pulumi config set gcp:region us-central1
+
+# Preview what will be created
+pulumi preview
+
+# Deploy
+pulumi up
+```
+
+This creates:
+- **GCS Bucket** — stores pipeline data and logs
+- **Artifact Registry** — stores Docker images
+- **Service Account** — pipeline identity with least-privilege permissions
+- **GCE VM** — runs the pipeline (Container-Optimized OS, e2-small)
+- **Firewall Rules** — blocks inbound SSH, allows outbound HTTPS only
+- **Cloud Function** — starts the VM (triggered by scheduler)
+
+### Step 9: Test the Pipeline
+
+Push any change to the `pipelines/` folder to trigger a build:
+
+```bash
+git add .
+git commit -m "Add myself to env-mapping"
+git push
+```
+
+Check the build at: [GitHub Actions](https://github.com/Aditya-sairam/trail-link/actions)
+
+Once the build succeeds, start the VM to run the pipeline:
+
+```bash
+gcloud compute instances start triallink-pipeline-vm --zone=us-central1-a
+```
+
+Monitor progress:
+- **GCP Console Logs**: `https://console.cloud.google.com/logs/query?project=YOUR_PROJECT_ID`
+- Query: `resource.type="gce_instance"`
+
+Verify data landed:
+```bash
+gcloud storage ls -r gs://triallink-pipeline-data-<YOUR_PROJECT_ID>/raw/
+```
+
+The VM will automatically shut down after the pipeline completes.
+
+---
+
+## Project Structure
+
+```
+trail-link/
+├── .github/workflows/
+│   └── pipeline-build.yml          # GitHub Actions CI/CD workflow
+├── env-mapping.json                 # GitHub username → variable prefix mapping
+├── setup_github_oidc.sh             # One-time GCP setup script
+├── infra/
+│   ├── datapipeline_stacks/         # Pulumi infra for data pipeline
+│   │   ├── __main__.py
+│   │   ├── pipelineStack.py
+│   │   ├── Pulumi.yaml
+│   │   └── requirements.txt
+│   └── pulumi_stacks/               # Pulumi infra for patient API (separate)
+├── pipelines/
+│   ├── Dockerfile                   # Airflow + pipeline code container
+│   ├── requirements.txt             # Python dependencies
+│   ├── dags/
+│   │   └── clinical_trials_dag.py   # Airflow DAG: fetch → CSV → GCS
+│   └── cloud_functions/
+│       └── start_vm/
+│           ├── main.py              # Cloud Function to start the VM
+│           └── requirements.txt
+├── sdk/                             # Patient API (existing)
+├── models/                          # ML models (future)
+└── tests/                           # Test suite (future)
+```
+
+## CI/CD Flow
+
+1. **Push to `pipelines/`** on the working branch triggers GitHub Actions
+2. Workflow reads `env-mapping.json` to identify who pushed
+3. Loads that person's GCP variables (project, region, SA, etc.)
+4. Authenticates to GCP via Workload Identity Federation (no keys stored)
+5. Builds Docker image with timestamp tag (e.g., `2026-02-16-175302`)
+6. Pushes image to Artifact Registry
+7. Updates VM startup script to reference the new image
+
+## Pipeline DAG Tasks
+
+```
+fetch_trials → save_to_csv → upload_to_gcs → cleanup
+```
+
+| Task | Description |
+|---|---|
+| `fetch_trials` | Calls ClinicalTrials.gov API v2, paginates through all diabetes trials (RECRUITING, ACTIVE_NOT_RECRUITING, ENROLLING_BY_INVITATION) |
+| `save_to_csv` | Flattens JSON, splits into batches of 1000, saves as CSV |
+| `upload_to_gcs` | Uploads each batch to `raw/YYYY-MM-DD/batch_NNN/` in GCS |
+| `cleanup` | Removes temporary local files |
+
+## Useful Commands
+
+```bash
+# Check VM status
+gcloud compute instances describe triallink-pipeline-vm \
+  --zone=us-central1-a --format="value(status)"
+
+# Start VM (triggers pipeline)
+gcloud compute instances start triallink-pipeline-vm --zone=us-central1-a
+
+# Stop VM manually
+gcloud compute instances stop triallink-pipeline-vm --zone=us-central1-a
+
+# View pipeline logs
+gcloud logging read \
+  "resource.type=gce_instance AND jsonPayload.message:startup-script" \
+  --limit=30 --format="table(timestamp, jsonPayload.message)"
+
+# List data in GCS
+gcloud storage ls -r gs://triallink-pipeline-data-<YOUR_PROJECT_ID>/raw/
+
+# View uploaded log files
+gcloud storage ls gs://triallink-pipeline-data-<YOUR_PROJECT_ID>/logs/
+
+# Pulumi commands (from infra/datapipeline_stacks/)
+pulumi preview    # Dry run
+pulumi up         # Deploy
+pulumi refresh    # Sync state with actual GCP
+pulumi stack ls   # List stacks
+```
+
+## Cost Notes
+
+- **GCE VM**: Only costs when running (~$0.02/hr for e2-small). Auto-shuts down after pipeline completes.
+- **GCS**: Pay per storage + operations. Minimal for this data volume.
+- **Artifact Registry**: Pay per storage. ~400MB per image.
+- **Cloud Function**: Free tier covers our usage.
+- **Cloud Scheduler**: Free tier covers 3 jobs.
+
+> **Tip**: Always verify the VM is stopped when not in use:
+> ```bash
+> gcloud compute instances describe triallink-pipeline-vm \
+>   --zone=us-central1-a --format="value(status)"
+> ```

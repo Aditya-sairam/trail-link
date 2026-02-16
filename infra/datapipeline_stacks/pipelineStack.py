@@ -64,6 +64,39 @@ def create_pipeline_stack():
         member=pipeline_sa.email.apply(lambda e: f"serviceAccount:{e}"),
     )
 
+    # IAM: Allow Cloud Scheduler to invoke the Cloud Function
+    gcp.projects.IAMMember(
+        "pipeline-sa-function-invoker",
+        project=project,
+        role="roles/cloudfunctions.invoker",
+        member=pipeline_sa.email.apply(lambda e: f"serviceAccount:{e}"),
+    )
+
+
+    # IAM: Allow SA to push Docker images (GitHub Actions CI/CD)
+    gcp.projects.IAMMember(
+        "pipeline-sa-artifact-writer",
+        project=project,
+        role="roles/artifactregistry.writer",
+        member=pipeline_sa.email.apply(lambda e: f"serviceAccount:{e}"),
+    )
+
+    # IAM: Allow SA to act as itself (update VM metadata)
+    gcp.projects.IAMMember(
+        "pipeline-sa-service-account-user",
+        project=project,
+        role="roles/iam.serviceAccountUser",
+        member=pipeline_sa.email.apply(lambda e: f"serviceAccount:{e}"),
+    )
+
+    # IAM: Allow SA to invoke Cloud Run (gen2 Cloud Functions)
+    gcp.projects.IAMMember(
+        "pipeline-sa-run-invoker",
+        project=project,
+        role="roles/run.invoker",
+        member=pipeline_sa.email.apply(lambda e: f"serviceAccount:{e}"),
+    )
+
     # GCE VM for running the pipeline
     pipeline_vm = gcp.compute.Instance(
         "pipeline-vm",
@@ -128,30 +161,6 @@ curl -sf -X POST \
 echo "=== STEP 6: Shutting down ==="
 shutdown -h now
 """,
-#  metadata_startup_script="""#!/bin/bash
-# set -x
-# LOG_FILE="/tmp/startup.log"
-# exec > $LOG_FILE 2>&1
-
-# echo "=== STEP 1: VM Started at $(date) ==="
-# echo "=== Running as user: $(whoami) ==="
-
-# echo "=== STEP 2: Check Docker ==="
-# which docker
-# docker version
-
-# echo "=== STEP 3: Auth Docker ==="
-# docker-credential-gcr configure-docker --registries=us-central1-docker.pkg.dev
-
-# echo "=== STEP 4: Pull Image ==="
-# docker pull us-central1-docker.pkg.dev/datapipeline-infra/triallink-pipeline/triallink-pipeline:2026-02-16-042549
-
-# echo "=== STEP 5: Upload log to GCS ==="
-# gsutil cp $LOG_FILE gs://triallink-pipeline-data-datapipeline-infra/logs/startup-$(date -u +%Y%m%d-%H%M%S).log
-
-# echo "=== STEP 6: Shutting down ==="
-# shutdown -h now
-# """,
         
         allow_stopping_for_update=True,
     )
@@ -220,6 +229,23 @@ shutdown -h now
         ),
     )
 
+    # 7. Cloud Scheduler - Weekly Trigger
+    scheduler_job = gcp.cloudscheduler.Job(
+        "weekly-pipeline-trigger",
+        name="triallink-weekly-pipeline",
+        region=region,
+        schedule="0 11 * * 1",
+        time_zone="America/New_York",
+        http_target=gcp.cloudscheduler.JobHttpTargetArgs(
+            uri=start_vm_function.url,
+            http_method="POST",
+            oidc_token=gcp.cloudscheduler.JobHttpTargetOidcTokenArgs(
+                service_account_email=pipeline_sa.email,
+            ),
+        ),
+    )
+
+    pulumi.export("scheduler_name", scheduler_job.name)
     pulumi.export("start_vm_function_url", start_vm_function.url)
 
     pulumi.export("vm_name", pipeline_vm.name)
