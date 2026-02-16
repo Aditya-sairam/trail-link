@@ -3,7 +3,7 @@ name: Build & Deploy Pipeline Image
 on:
   push:
     branches:
-      - datapipeline-swarali
+      - datapipeline-backup 
     paths:
       - 'pipelines/**'
 
