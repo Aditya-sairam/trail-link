@@ -5,6 +5,7 @@ Main pulumi entry point - This is where the stacks will be created and pushed to
 import pulumi 
 import pulumi_gcp as gcp 
 from patientStack import PatientStack
+from datapipelineStack import DataPipelineStack
 
 gcp_config = pulumi.Config("gcp")
 project_id = gcp_config.require("project")
@@ -16,6 +17,12 @@ patient_stack = PatientStack(
     name=stack_name,
     project_id=project_id,
     region=region
+)
+
+pipeline_stack = DataPipelineStack(
+    name=stack_name,
+    project_id=project_id,
+    region=region,
 )
 
 pulumi.export("deployment_summary",{
