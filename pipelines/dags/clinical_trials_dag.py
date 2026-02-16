@@ -157,7 +157,7 @@ def fetch_trials(**context):
         if not page_token:
             break
 
-        # Rate limiting: be polite to the API
+        ## Rate limiting: be polite to the API
         time.sleep(0.5)
 
     # Save raw JSON
