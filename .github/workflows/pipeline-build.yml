@@ -20,7 +20,7 @@ jobs:
       - name: Lookup user prefix
         id: lookup
         run: |
-          PREFIX=$(jq -r '."${{ github.actor }}" // empty' pipelines/env-mapping.json)
+          PREFIX=$(jq -r '."${{ github.actor }}" // empty' env-mapping.json)
           if [ -z "$PREFIX" ]; then
             echo "ERROR: No mapping found for GitHub user '${{ github.actor }}'"
             echo "Add your username to pipelines/env-mapping.json"
