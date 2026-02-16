@@ -1,0 +1,137 @@
+name: Build & Deploy Pipeline Image
+
+on:
+  push:
+    branches:
+      - datapipeline-swarali
+    paths:
+      - 'pipelines/**'
+
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  resolve-env:
+    runs-on: ubuntu-latest
+    outputs:
+      user_prefix: ${{ steps.lookup.outputs.prefix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lookup user prefix
+        id: lookup
+        run: |
+          PREFIX=$(jq -r '."${{ github.actor }}" // empty' pipelines/env-mapping.json)
+          if [ -z "$PREFIX" ]; then
+            echo "ERROR: No mapping found for GitHub user '${{ github.actor }}'"
+            echo "Add your username to pipelines/env-mapping.json"
+            exit 1
+          fi
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+          echo "Resolved user '${{ github.actor }}' to prefix '$PREFIX'"
+
+  build-and-deploy:
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+
+    env:
+      PREFIX: ${{ needs.resolve-env.outputs.user_prefix }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set user-specific variables
+        id: vars
+        run: |
+          PREFIX="${{ env.PREFIX }}"
+          echo "project_id=${{ vars[format('{0}_GCP_PROJECT_ID', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+          echo "region=${{ vars[format('{0}_GCP_REGION', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+          echo "sa_email=${{ vars[format('{0}_GCP_SA_EMAIL', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+          echo "wif_provider=${{ vars[format('{0}_WIF_PROVIDER', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+          echo "vm_name=${{ vars[format('{0}_GCP_VM_NAME', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+          echo "vm_zone=${{ vars[format('{0}_GCP_VM_ZONE', env.PREFIX)] }}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.vars.outputs.wif_provider }}
+          service_account: ${{ steps.vars.outputs.sa_email }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ steps.vars.outputs.region }}-docker.pkg.dev --quiet
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          TAG=$(date -u +"%Y-%m-%d-%H%M%S")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image tag: $TAG"
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ steps.vars.outputs.region }}-docker.pkg.dev/${{ steps.vars.outputs.project_id }}/triallink-pipeline/triallink-pipeline:${{ steps.tag.outputs.tag }} ./pipelines
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.vars.outputs.region }}-docker.pkg.dev/${{ steps.vars.outputs.project_id }}/triallink-pipeline/triallink-pipeline:${{ steps.tag.outputs.tag }}
+
+      - name: Update VM startup script with new image
+        run: |
+          IMAGE="${{ steps.vars.outputs.region }}-docker.pkg.dev/${{ steps.vars.outputs.project_id }}/triallink-pipeline/triallink-pipeline:${{ steps.tag.outputs.tag }}"
+          VM="${{ steps.vars.outputs.vm_name }}"
+          ZONE="${{ steps.vars.outputs.vm_zone }}"
+          PROJECT="${{ steps.vars.outputs.project_id }}"
+          BUCKET="triallink-pipeline-data-${PROJECT}"
+
+          gcloud compute instances add-metadata $VM \
+            --zone=$ZONE \
+            --project=$PROJECT \
+            --metadata=startup-script="#!/bin/bash
+          set -x
+          LOG_FILE=/tmp/startup.log
+          exec > >(tee \$LOG_FILE) 2>&1
+
+          echo \"=== STEP 1: VM Started at \$(date) ===\"
+          export HOME=/tmp
+
+          echo \"=== STEP 2: Auth Docker ===\"
+          docker-credential-gcr configure-docker --registries=${IMAGE%%/*}
+
+          echo \"=== STEP 3: Pull Image ===\"
+          docker pull $IMAGE
+
+          echo \"=== STEP 4: Run Airflow DAG ===\"
+          docker run --rm \\
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=False \\
+            -e AIRFLOW__CORE__EXECUTOR=SequentialExecutor \\
+            -e AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////tmp/airflow.db \\
+            -e AIRFLOW_HOME=/tmp/airflow \\
+            -e GCS_BUCKET=$BUCKET \\
+            $IMAGE \\
+            bash -c \"mkdir -p /tmp/airflow && export AIRFLOW_HOME=/tmp/airflow && cp -r /opt/airflow/dags /tmp/airflow/dags && airflow db migrate && airflow dags test clinical_trials_pipeline \$(date -u +%Y-%m-%d)\"
+
+          echo \"=== DAG exit code: \$? ===\"
+
+          echo \"=== STEP 5: Upload log to GCS ===\"
+          TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed 's/.*\"access_token\":\"\\([^\"]*\\)\".*/\\1/')
+          LOGNAME=startup-\$(date -u +%Y%m%d-%H%M%S).log
+          curl -sf -X POST \\
+            -H \"Authorization: Bearer \$TOKEN\" \\
+            -H 'Content-Type: text/plain' \\
+            --data-binary @\$LOG_FILE \\
+            \"https://storage.googleapis.com/upload/storage/v1/b/$BUCKET/o?uploadType=media&name=logs/\$LOGNAME\"
+
+          echo \"=== STEP 6: Shutting down ===\"
+          shutdown -h now"
+
+      - name: Print summary
+        run: |
+          echo "✅ Image built and pushed: ${{ steps.tag.outputs.tag }}"
+          echo "✅ VM startup script updated to use new image"
+          echo "Next VM start will use the new image automatically"
