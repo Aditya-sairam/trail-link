@@ -1,0 +1,3 @@
+from pipelineStack import create_pipeline_stack
+
+create_pipeline_stack()

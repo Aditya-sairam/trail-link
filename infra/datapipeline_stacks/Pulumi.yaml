@@ -1,0 +1,6 @@
+name: triallink-datapipeline
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Data Pipeline Infrastructure for TrialLink Clinical Trial Matching

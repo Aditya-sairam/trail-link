@@ -1,0 +1,13 @@
+substitutions:
+  _TIMESTAMP: '${_TIMESTAMP}'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/datapipeline-infra/triallink-pipeline/triallink-pipeline:${_TIMESTAMP}'
+      - '.'
+
+images:
+  - 'us-central1-docker.pkg.dev/datapipeline-infra/triallink-pipeline/triallink-pipeline:${_TIMESTAMP}'
