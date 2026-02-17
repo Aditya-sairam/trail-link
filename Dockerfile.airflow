@@ -1,0 +1,12 @@
+FROM apache/airflow:2.9.3
+
+USER root
+
+# System deps (git is useful, and DVC sometimes needs it)
+RUN apt-get update && apt-get install -y git && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+# Install DVC as airflow user (Airflow image requires this)
+RUN pip install --no-cache-dir "dvc==3.55.2"
