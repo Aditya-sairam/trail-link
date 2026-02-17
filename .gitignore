@@ -28,9 +28,18 @@ dist/
 *.h5
 *.ckpt
 models/saved/
-data/
 logs/
 mlruns/
+vvs/
+
+# Data artifacts (do NOT commit raw data to Git)
+data/**
+
+# Allow DVC metadata files under data/ to be committed
+!data/
+!data/**/
+!data/**/*.dvc
+!data/**/.gitkeep
 
 # OS
 .DS_Store
