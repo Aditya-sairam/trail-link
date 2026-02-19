@@ -17,13 +17,17 @@ from airflow.operators.python import PythonOperator
 # ============================================================
 # Configuration
 # ============================================================
-BUCKET_NAME = os.getenv("GCS_BUCKET", "triallink-pipeline-data-datapipeline-infra")
+BUCKET_NAME = os.getenv("CLINICAL_TRIALS_BUCKET", "")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "")
 CONDITION = "diabetes"
 STATUSES = "RECRUITING|ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION"
 PAGE_SIZE = 1000
 BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
 LOCAL_DIR = "/tmp/pipeline"
 RUN_DATE = datetime.utcnow().strftime("%Y-%m-%d")
+
+if not BUCKET_NAME or not PROJECT_ID:
+    raise ValueError("Please set CLINICAL_TRIALS_BUCKET and GCP_PROJECT_ID environment variables.")
 
 # CSV column order (matches your reference)
 CSV_COLUMNS = [
@@ -218,9 +222,9 @@ def upload_to_gcs(**context):
     from google.cloud import storage
 
     csv_paths = context["ti"].xcom_pull(key="csv_paths")
-    client = storage.Client(project="datapipeline-infra")
+    client = storage.Client(project=PROJECT_ID)
     bucket = client.bucket(BUCKET_NAME)
-
+    log.info(f"Uploading {len(csv_paths)} batches to GCS bucket: {BUCKET_NAME}")
     for csv_path in csv_paths:
         # Extract batch folder name from path
         # e.g., /tmp/pipeline/batch_001/2026-02-16_batch_001.csv
