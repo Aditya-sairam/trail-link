@@ -1,0 +1,48 @@
+{
+  "total_trials": 2030,
+  "disease": "diabetes",
+  "slices": {
+    "Sex": {
+      "counts": {
+        "ALL": 1832,
+        "FEMALE": 81,
+        "MALE": 22
+      },
+      "pct": {
+        "ALL": 0.9467700258397933,
+        "FEMALE": 0.04186046511627907,
+        "MALE": 0.011369509043927648
+      }
+    },
+    "disease_type": {
+      "counts": {
+        "Diabetes (General)": 854,
+        "Type 2 Diabetes": 650,
+        "Type 1 Diabetes": 341,
+        "Gestational Diabetes": 95,
+        "Pre-Diabetes": 76,
+        "Diabetes Insipidus": 8,
+        "Rare Diabetes": 6
+      },
+      "pct": {
+        "Diabetes (General)": 0.4206896551724138,
+        "Type 2 Diabetes": 0.32019704433497537,
+        "Type 1 Diabetes": 0.16798029556650246,
+        "Gestational Diabetes": 0.046798029556650245,
+        "Pre-Diabetes": 0.0374384236453202,
+        "Diabetes Insipidus": 0.003940886699507389,
+        "Rare Diabetes": 0.002955665024630542
+      }
+    },
+    "geography": {
+      "us_trials": 780,
+      "international_trials": 1250,
+      "us_percentage": 38.42
+    }
+  },
+  "warnings": [
+    "SEX IMBALANCE: Male=22, Female=81 (ratio: 0.27)"
+  ],
+  "bias_score": 1,
+  "bias_level": "MEDIUM"
+}
