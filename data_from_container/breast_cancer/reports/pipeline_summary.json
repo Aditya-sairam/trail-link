@@ -1,0 +1,15 @@
+{
+  "pipeline_run_date": "2026-02-21T22:25:19.364974",
+  "condition": "breast_cancer",
+  "total_trials": 2449,
+  "bias_level": "MEDIUM",
+  "reports": {
+    "stats": "/opt/airflow/repo/data/breast_cancer/reports/stats.json",
+    "anomalies": "/opt/airflow/repo/data/breast_cancer/reports/anomalies.json",
+    "bias": "/opt/airflow/repo/data/breast_cancer/reports/bias_report.json"
+  },
+  "notes": {
+    "validate_short_circuit": false,
+    "quality_short_circuit": false
+  }
+}

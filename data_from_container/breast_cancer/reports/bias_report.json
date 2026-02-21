@@ -1,0 +1,52 @@
+{
+  "total_trials": 2449,
+  "disease": "breast_cancer",
+  "slices": {
+    "Sex": {
+      "counts": {
+        "ALL": 1232,
+        "FEMALE": 1212,
+        "MALE": 5
+      },
+      "pct": {
+        "ALL": 0.5030624744793794,
+        "FEMALE": 0.4948958758677011,
+        "MALE": 0.002041649652919559
+      }
+    },
+    "disease_type": {
+      "counts": {
+        "Breast Cancer (General)": 1619,
+        "HER2 Positive Breast Cancer": 264,
+        "Metastatic Breast Cancer": 236,
+        "Triple Negative Breast Cancer": 213,
+        "Early Stage Breast Cancer": 43,
+        "Ductal Carcinoma": 39,
+        "Hormone Receptor Positive Breast Cancer": 29,
+        "Inflammatory Breast Cancer": 5,
+        "Lobular Carcinoma": 1
+      },
+      "pct": {
+        "Breast Cancer (General)": 0.6610861576153532,
+        "HER2 Positive Breast Cancer": 0.10779910167415271,
+        "Metastatic Breast Cancer": 0.09636586361780318,
+        "Triple Negative Breast Cancer": 0.08697427521437322,
+        "Early Stage Breast Cancer": 0.017558187015108206,
+        "Ductal Carcinoma": 0.015924867292772562,
+        "Hormone Receptor Positive Breast Cancer": 0.011841567986933442,
+        "Inflammatory Breast Cancer": 0.002041649652919559,
+        "Lobular Carcinoma": 0.0004083299305839118
+      }
+    },
+    "geography": {
+      "us_trials": 950,
+      "international_trials": 1499,
+      "us_percentage": 38.79
+    }
+  },
+  "warnings": [
+    "SEX IMBALANCE: Male=5, Female=1212 (ratio: 0.00)"
+  ],
+  "bias_score": 1,
+  "bias_level": "MEDIUM"
+}

@@ -1,0 +1,15 @@
+{
+  "pipeline_run_date": "2026-02-21T22:22:40.161435",
+  "condition": "diabetes",
+  "total_trials": 2030,
+  "bias_level": "MEDIUM",
+  "reports": {
+    "stats": "/opt/airflow/repo/data/diabetes/reports/stats.json",
+    "anomalies": "/opt/airflow/repo/data/diabetes/reports/anomalies.json",
+    "bias": "/opt/airflow/repo/data/diabetes/reports/bias_report.json"
+  },
+  "notes": {
+    "validate_short_circuit": false,
+    "quality_short_circuit": false
+  }
+}
