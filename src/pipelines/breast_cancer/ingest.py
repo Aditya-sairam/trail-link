@@ -15,9 +15,6 @@ def get_logger(name: str = "breast_cancer") -> logging.Logger:
 
 
 def sanitize_filename(text: str) -> str:
-    """
-    Matches your original sanitize behavior.
-    """
     text = str(text).lower()
     text = text.replace(" ", "_")
     text = "".join(c for c in text if c.isalnum() or c == "_")
@@ -27,10 +24,6 @@ def sanitize_filename(text: str) -> str:
 
 
 def extract_cancer_type(conditions: str) -> str:
-    """
-    Extract most specific breast cancer subtype from Conditions column.
-    Matches your original logic.
-    """
     if pd.isna(conditions):
         return "breast_cancer"
 
@@ -44,6 +37,21 @@ def extract_cancer_type(conditions: str) -> str:
     return "breast_cancer"
 
 
+def normalize_cancer_type(x) -> str:
+    if pd.isna(x):
+        return x
+    x = str(x).strip().lower()
+    if "triple" in x and "negative" in x:
+        return "triple_negative"
+    if "metastatic" in x:
+        return "metastatic"
+    if "her2" in x:
+        return "her2_positive"
+    if "stage" in x:
+        return "stage_specific"
+    return "general_breast_cancer"
+
+
 def download_raw_trials_csv(
     raw_file_path: str,
     status: str = "RECRUITING",
@@ -53,10 +61,6 @@ def download_raw_trials_csv(
     timeout_seconds: int = 120,
     logger: Optional[logging.Logger] = None,
 ) -> str:
-    """
-    Downloads ALL columns in CSV format into a single raw CSV file.
-    Uses JSON calls to get nextPageToken, matching your approach.
-    """
     logger = logger or get_logger()
 
     os.makedirs(os.path.dirname(raw_file_path), exist_ok=True)
@@ -123,10 +127,6 @@ def enrich_trials_csv(
     enriched_file_path: str,
     logger: Optional[logging.Logger] = None,
 ) -> str:
-    """
-    Loads raw CSV, deduplicates by NCTId, adds disease + cancer_type, writes enriched CSV.
-    Matches your original behavior.
-    """
     logger = logger or get_logger()
 
     os.makedirs(os.path.dirname(enriched_file_path), exist_ok=True)
@@ -146,6 +146,57 @@ def enrich_trials_csv(
     else:
         df["cancer_type"] = "breast_cancer"
 
+    cols_to_drop = [
+        "Results First Posted",
+        "Study Documents",
+        "Other Outcome Measures",
+    ]
+    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors="ignore")
+
+    text_trim_cols = [c for c in df.columns if df[c].dtype == "object"]
+    for col in text_trim_cols:
+        df[col] = df[col].astype(str).str.strip()
+
+    lower_cols = [
+        "cancer_type",
+        "Phases",
+        "Study Status",
+        "Sex",
+        "Study Type",
+        "Acronym",
+        "Funder Type",
+    ]
+    for col in lower_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().str.lower()
+
+    if "cancer_type" in df.columns:
+        df["cancer_type"] = df["cancer_type"].apply(normalize_cancer_type)
+
+    date_cols = [
+        "Start Date",
+        "Completion Date",
+        "Primary Completion Date",
+        "First Posted",
+        "Last Update Posted",
+    ]
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col].astype(str).str.strip(), errors="coerce")
+
+    if "Enrollment" in df.columns:
+        df["Enrollment"] = pd.to_numeric(df["Enrollment"], errors="coerce")
+
+    if "Phases" in df.columns:
+        df["Phases"] = (
+            df["Phases"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .str.replace("phase", "", regex=False)
+            .str.strip()
+        )
+
     df.to_csv(enriched_file_path, index=False)
     logger.info("Enriched CSV saved: %s", enriched_file_path)
     logger.info("Total unique trials saved: %s", len(df))
@@ -159,9 +210,6 @@ def run_full_ingestion(
     status: str = "RECRUITING",
     page_size: int = 1000,
 ) -> str:
-    """
-    One function to run the full pipeline locally.
-    """
     logger = get_logger()
     logger.info("=" * 80)
     logger.info("FULL BREAST CANCER INGESTION STARTED")

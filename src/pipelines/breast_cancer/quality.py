@@ -1,10 +1,14 @@
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pandas as pd
 
 from src.pipelines.breast_cancer.ingest import get_logger
+
+
+# ClinicalTrials.gov CSV export uses "NCT Number" (not "NCTId")
+NCT_ID_COL = "NCT Number"
 
 
 def generate_stats(df: pd.DataFrame) -> Dict[str, Any]:
@@ -19,8 +23,9 @@ def generate_stats(df: pd.DataFrame) -> Dict[str, Any]:
         "missing_by_col": df.isna().sum().to_dict(),
     }
 
-    if "NCTId" in df.columns:
-        stats["unique_nctid"] = int(df["NCTId"].nunique())
+    # Track unique trial IDs if the ID column exists
+    if NCT_ID_COL in df.columns:
+        stats["unique_nct_number"] = int(df[NCT_ID_COL].nunique())
 
     return stats
 
@@ -31,22 +36,22 @@ def detect_anomalies(df: pd.DataFrame) -> Dict[str, Any]:
     - easy to understand
     - easy to test
     - good enough for a pipeline-only submission
-
-    You can make these stricter later using Great Expectations.
     """
     anomalies: Dict[str, Any] = {
         "missing_required_columns": [],
-        "duplicate_nctid_found": False,
+        "duplicate_nct_number_found": False,
         "high_missing_columns": [],
     }
 
-    required_cols = ["NCTId"]
+    # Required columns for your pipeline outputs
+    required_cols = [NCT_ID_COL]
     for c in required_cols:
         if c not in df.columns:
             anomalies["missing_required_columns"].append(c)
 
-    if "NCTId" in df.columns:
-        anomalies["duplicate_nctid_found"] = bool(df["NCTId"].duplicated().any())
+    # Duplicate ID check
+    if NCT_ID_COL in df.columns:
+        anomalies["duplicate_nct_number_found"] = bool(df[NCT_ID_COL].duplicated().any())
 
     # Flag columns with too much missingness (70%+)
     for c in df.columns:
@@ -68,13 +73,15 @@ def save_json(obj: Dict[str, Any], out_path: str) -> str:
 
 def anomalies_found(anomalies: Dict[str, Any]) -> bool:
     """
-    Used later by Airflow to decide whether to alert.
+    Used by Airflow to decide whether to alert.
     """
     return bool(
         anomalies["missing_required_columns"]
-        or anomalies["duplicate_nctid_found"]
+        or anomalies["duplicate_nct_number_found"]
         or anomalies["high_missing_columns"]
     )
+# def anomalies_found(anomalies):
+#     return True
 
 
 def run_quality_checks(enriched_csv_path: str, stats_path: str, anomalies_path: str) -> None:

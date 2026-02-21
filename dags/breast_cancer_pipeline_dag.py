@@ -120,13 +120,13 @@ with DAG(
 
     alert_email = EmailOperator(
     task_id="alert_on_anomalies",
-    to="admin@example.com",
+    to="sarmalkar.vaishnavi2003@gmail.com",
     subject="Breast Cancer Pipeline: Data Anomalies Detected",
     html_content="""
     <h3>Data anomalies were detected in the latest breast cancer pipeline run.</h3>
     <p>Please check the anomalies report at: <code>data/breast_cancer/reports/anomalies.json</code></p>
     """,
-   )
+)
     
     dvc_version = PythonOperator(
     task_id="dvc_version_data",
