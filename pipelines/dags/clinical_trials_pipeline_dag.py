@@ -42,6 +42,15 @@ def abs_path(path: str) -> str:
     return path if path.startswith("/") else os.path.join(BASE, path)
 
 
+def safe_path(p: str) -> str | None:
+    return p if p and os.path.exists(p) else None
+
+
+def get_xcom(ti, task_id: str, key: str, default=None):
+    val = ti.xcom_pull(task_ids=task_id, key=key)
+    return default if val is None else val
+
+
 # ─── Tasks ───────────────────────────────────────────────────────────────────
 
 def task_fetch_raw(**context):
@@ -95,46 +104,67 @@ def task_anomaly_fn(**context):
         with open(anomalies_path) as f:
             anomalies = json.load(f)
         context["ti"].xcom_push(key="anomalies_found", value=anomalies_found(anomalies))
+    else:
+        context["ti"].xcom_push(key="anomalies_found", value=None)
 
 
 def task_bias_fn(**context):
     config      = get_config(context)
     reports_dir = abs_path(config["reports_dir"])
-    df          = pd.read_csv(abs_path(config["enriched_path"]))
-    report      = generate_bias_report(df)
+    enriched    = abs_path(config["enriched_path"])
+
+    if not os.path.exists(enriched):
+        context["ti"].xcom_push(key="bias_level", value=None)
+        return
+
+    df     = pd.read_csv(enriched)
+    report = generate_bias_report(df)
     save_bias_report(report, bias_path=os.path.join(reports_dir, "bias_report.json"))
-    context["ti"].xcom_push(key="bias_level", value=report["bias_level"])
+    context["ti"].xcom_push(key="bias_level", value=report.get("bias_level"))
 
 
 def task_save_reports(**context):
     config      = get_config(context)
     reports_dir = abs_path(config["reports_dir"])
-    total       = context["ti"].xcom_pull(task_ids="task_stats",   key="total_trials")
-    bias_level  = context["ti"].xcom_pull(task_ids="task_bias",    key="bias_level")
+    os.makedirs(reports_dir, exist_ok=True)
+
+    ti = context["ti"]
+
+    total      = get_xcom(ti, "task_stats", "total_trials", default=None)
+    bias_level = get_xcom(ti, "task_bias",  "bias_level",   default=None)
+
+    stats_path     = os.path.join(reports_dir, "stats.json")
+    anomalies_path = os.path.join(reports_dir, "anomalies.json")
+    bias_path      = os.path.join(reports_dir, "bias_report.json")
 
     summary = {
         "pipeline_run_date": datetime.now().isoformat(),
         "condition":         config["disease"],
         "total_trials":      total,
         "bias_level":        bias_level,
-        "reports":           {
-            "stats":     os.path.join(reports_dir, "stats.json"),
-            "anomalies": os.path.join(reports_dir, "anomalies.json"),
-            "bias":      os.path.join(reports_dir, "bias_report.json"),
+        "reports": {
+            "stats":     safe_path(stats_path),
+            "anomalies": safe_path(anomalies_path),
+            "bias":      safe_path(bias_path),
+        },
+        "notes": {
+            "validate_short_circuit": ti.xcom_pull(task_ids="task_validate") is False,
+            "quality_short_circuit":  ti.xcom_pull(task_ids="task_quality")  is False,
         },
     }
 
-    os.makedirs(reports_dir, exist_ok=True)
     with open(os.path.join(reports_dir, "pipeline_summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
 
-    log.info(f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}")
+    log.info(
+        f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}"
+    )
 
 
 # ─── DAG ─────────────────────────────────────────────────────────────────────
 
 with DAG(
-    dag_id="clinical_trials_pipeline",
+    dag_id="clinical_trials_data_pipeline",
     description="Generalised clinical trials pipeline — pass condition via params",
     schedule_interval="@daily",
     start_date=datetime(2025, 1, 1),
@@ -149,13 +179,50 @@ with DAG(
     },
 ) as dag:
 
-    fetch_raw    = PythonOperator(task_id="task_fetch_raw",    python_callable=task_fetch_raw,    execution_timeout=timedelta(minutes=30))
-    enrich       = PythonOperator(task_id="task_enrich",       python_callable=task_enrich,       execution_timeout=timedelta(minutes=5))
-    validate     = ShortCircuitOperator(task_id="task_validate", python_callable=task_validate,   execution_timeout=timedelta(minutes=5))
-    quality      = ShortCircuitOperator(task_id="task_quality",  python_callable=task_quality,    execution_timeout=timedelta(minutes=10))
-    stats        = PythonOperator(task_id="task_stats",        python_callable=task_stats_fn,     execution_timeout=timedelta(minutes=5))
-    anomaly      = PythonOperator(task_id="task_anomaly",      python_callable=task_anomaly_fn,   execution_timeout=timedelta(minutes=5))
-    bias         = PythonOperator(task_id="task_bias",         python_callable=task_bias_fn,      execution_timeout=timedelta(minutes=5))
-    save_reports = PythonOperator(task_id="task_save_reports", python_callable=task_save_reports, execution_timeout=timedelta(minutes=5))
+    fetch_raw = PythonOperator(
+        task_id="task_fetch_raw",
+        python_callable=task_fetch_raw,
+        execution_timeout=timedelta(minutes=30),
+    )
+    enrich = PythonOperator(
+        task_id="task_enrich",
+        python_callable=task_enrich,
+        execution_timeout=timedelta(minutes=5),
+    )
+    validate = ShortCircuitOperator(
+        task_id="task_validate",
+        python_callable=task_validate,
+        execution_timeout=timedelta(minutes=5),
+    )
+    quality = ShortCircuitOperator(
+        task_id="task_quality",
+        python_callable=task_quality,
+        execution_timeout=timedelta(minutes=10),
+    )
+
+    stats = PythonOperator(
+        task_id="task_stats",
+        python_callable=task_stats_fn,
+        execution_timeout=timedelta(minutes=5),
+        trigger_rule="all_done",
+    )
+    anomaly = PythonOperator(
+        task_id="task_anomaly",
+        python_callable=task_anomaly_fn,
+        execution_timeout=timedelta(minutes=5),
+        trigger_rule="all_done",
+    )
+    bias = PythonOperator(
+        task_id="task_bias",
+        python_callable=task_bias_fn,
+        execution_timeout=timedelta(minutes=5),
+        trigger_rule="all_done",
+    )
+    save_reports = PythonOperator(
+        task_id="task_save_reports",
+        python_callable=task_save_reports,
+        execution_timeout=timedelta(minutes=5),
+        trigger_rule="all_done",
+    )
 
     fetch_raw >> enrich >> validate >> quality >> [stats, anomaly, bias] >> save_reports
