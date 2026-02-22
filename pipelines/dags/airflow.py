@@ -25,9 +25,14 @@ from src.ingest import download_raw_trials_csv, enrich_trials_csv
 from src.quality import anomalies_found, run_quality_checks
 from src.stats import compute_stats
 from src.validate import run_validation
+from src.gcs_upload import upload_raw_to_gcs
+from src.firestore_upload import upload_enriched_to_firestore
 
 
 BASE = os.getenv("TRAILLINK_BASE", "/opt/airflow/repo")
+BUCKET_NAME  = os.getenv("CLINICAL_TRIALS_BUCKET", "")
+PROJECT_ID   = os.getenv("GCP_PROJECT_ID", "")
+FIRESTORE_DB = os.getenv("FIRESTORE_DATABASE", "patient-db-sai")
 log = logging.getLogger(__name__)
 
 
@@ -169,6 +174,28 @@ def task_save_reports(**context):
 
     log.info(f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}")
 
+def task_upload_gcs(**context):
+    config = get_config(context)
+    log.info("Uploading raw data in json format to GCS bucket!!")
+    upload_raw_to_gcs(
+        raw_file_path=abs_path(config["raw_path"]),
+        condition=config["disease"],
+        bucket_name=BUCKET_NAME,
+        project_id=PROJECT_ID,
+    )
+    log.info("Successfully Uploaded raw data in json format to GCS bucket!!")
+
+def task_upload_firestore(**context):
+    config = get_config(context)
+    log.info("Uploading processed data in json format to FireStore DB!!")
+    upload_enriched_to_firestore(
+        enriched_file_path=abs_path(config["enriched_path"]),
+        condition=config["disease"],
+        project_id=PROJECT_ID,
+        database=FIRESTORE_DB,
+    )
+    log.info("Successfully Uploaded processed data in json format to FireStore DB!!")
+
 
 with DAG(
     dag_id="clinical_trials_data_pipeline",
@@ -240,4 +267,18 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    fetch_raw >> enrich >> validate >> quality >> [stats, anomaly, bias] >> save_reports
+    upload_gcs = PythonOperator(
+        task_id="task_upload_gcs",
+        python_callable=task_upload_gcs,
+        execution_timeout=timedelta(minutes=10),
+        trigger_rule="all_done",
+    )
+
+    upload_firestore = PythonOperator(
+        task_id="task_upload_firestore",
+        python_callable=task_upload_firestore,
+        execution_timeout=timedelta(minutes=15),
+        trigger_rule="all_done",
+    )
+
+    fetch_raw >> enrich >> validate >> quality >> [stats, anomaly, bias] >> save_reports >> [upload_gcs, upload_firestore]
