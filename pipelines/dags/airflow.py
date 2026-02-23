@@ -30,9 +30,9 @@ from src.firestore_upload import upload_enriched_to_firestore
 
 
 BASE = os.getenv("TRAILLINK_BASE", "/opt/airflow/repo")
-BUCKET_NAME  = os.getenv("CLINICAL_TRIALS_BUCKET", "")
-PROJECT_ID   = os.getenv("GCP_PROJECT_ID", "")
-FIRESTORE_DB = os.getenv("FIRESTORE_DATABASE", "patient-db-sai")
+BUCKET_NAME  = os.getenv("RAW_CLINICAL_TRIALS_STORAGE", "triallink-pipeline-data-mlops-test-project-486922")
+PROJECT_ID   = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+FIRESTORE_DB = os.getenv("CLINICAL_TRIALS_FIRESTORE", "clinical-trials-db")
 log = logging.getLogger(__name__)
 
 
