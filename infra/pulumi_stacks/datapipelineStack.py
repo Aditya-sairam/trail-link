@@ -16,8 +16,18 @@ class DataPipelineStack:
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
         self._grant_storage_access()
-        self._export_outputs()
         self._make_public()
+        self.firestore_db = self._create_firestore()
+        self._export_outputs()
+
+        self.dvc_bucket = gcp.storage.Bucket(
+            f"{self.name}-dvc-storage",
+            name=f"dvc-storage-clinical-trials",
+            location="US",
+            versioning=gcp.storage.BucketVersioningArgs(
+                enabled=True,  # Keep version history
+                ),
+        )
 
     def _create_bucket(self) -> gcp.storage.Bucket:
         return gcp.storage.Bucket(
@@ -107,6 +117,17 @@ class DataPipelineStack:
             ),
         )
     
+    def _create_firestore(self) -> gcp.firestore.Database:
+        return gcp.firestore.Database(
+            f"{self.name}-clinical-trials-db",
+            project = self.project_id,
+            name=f"clinical-trials-db",
+            location_id = self.region,
+            type = "FIRESTORE_NATIVE",
+            concurrency_mode = "OPTIMISTIC",
+            opts = self.opts
+        )
+
     def _make_public(self):
         """Make Cloud Run service publicly accessible"""
         self.airflow_service = gcp.cloudrunv2.ServiceIamMember(
@@ -120,6 +141,6 @@ class DataPipelineStack:
         )
 
     def _export_outputs(self):
-        pulumi.export(f"{self.name}_pipeline_bucket", self.pipeline_bucket.name)
-        pulumi.export(f"{self.name}_pipeline_bucket_url", self.pipeline_bucket.url)
+        pulumi.export("RAW_CLINICAL_TRIALS_STORAGE", self.pipeline_bucket.name)
+        pulumi.export("CLINICAL_TRIALS_FIRESTORE", self.firestore_db.name)
         pulumi.export(f"{self.name}_pipeline_sa", self.service_account.email)

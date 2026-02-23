@@ -5,10 +5,11 @@ ENV AIRFLOW__CORE__EXECUTOR=SequentialExecutor
 ENV AIRFLOW__WEBSERVER__WEB_SERVER_PORT=8081
 # ENV WTF_CSRF_ENABLED=False
 # ENV AIRFLOW__WEBSERVER__SECRET_KEY=UYOY6--AHT4WmH4qmnq-pc0mQ0crzo-HTNE9TXc-VZw
-
 COPY dags/ /opt/airflow/dags/
 
 COPY requirements.txt /opt/airflow/
+
+RUN pip install "dvc[gs]"
 
 RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt
 
@@ -21,6 +22,8 @@ RUN airflow users create \
     --role Admin \
     --email admin@example.com \
     --password admin
+USER root
+
 CMD ["airflow", "standalone"]
 
 
