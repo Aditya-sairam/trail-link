@@ -1,11 +1,4 @@
-"""
-Clinical Trials Pipeline DAG — Generalised
-==========================================
-Single DAG for any condition. Pass condition via params.
-
-  airflow dags trigger clinical_trials_data_pipeline --conf '{"condition": "diabetes"}'
-  airflow dags trigger clinical_trials_data_pipeline --conf '{"condition": "breast_cancer"}'
-"""
+# pipelines/dags/airflow.py
 
 from __future__ import annotations
 
@@ -23,6 +16,7 @@ from src.bias import generate_bias_report, save_bias_report
 from src.conditions.registry import REGISTRY
 from src.ingest import download_raw_trials_csv, enrich_trials_csv
 from src.quality import anomalies_found, run_quality_checks
+from src.schema import run_schema_checkpoint, RAW_REQUIRED_DEFAULT, PROCESSED_REQUIRED_DEFAULT
 from src.stats import compute_stats
 from src.validate import run_validation
 from src.gcs_upload import upload_raw_to_gcs
@@ -67,6 +61,26 @@ def task_fetch_raw(**context):
     )
 
 
+def task_schema_raw(**context):
+    config = get_config(context)
+
+    schema_dir = abs_path(config["schema_dir"])
+    os.makedirs(schema_dir, exist_ok=True)
+
+    csv_path = abs_path(config["raw_path"])
+    baseline_schema_path = abs_path(config["raw_schema_path"])
+    report_path = os.path.join(abs_path(config["reports_dir"]), "schema_raw_report.json")
+
+    run_schema_checkpoint(
+    csv_path=csv_path,
+    baseline_schema_path=baseline_schema_path,
+    report_path=report_path,
+    required_columns=RAW_REQUIRED_DEFAULT,
+    mode="warn", 
+    allow_new_columns=True,
+)
+
+
 def task_enrich(**context):
     config = get_config(context)
     enrich_trials_csv(
@@ -74,6 +88,26 @@ def task_enrich(**context):
         enriched_file_path=abs_path(config["enriched_path"]),
         disease=config["disease"],
         classifier=config["classifier"],
+    )
+
+
+def task_schema_processed(**context):
+    config = get_config(context)
+
+    schema_dir = abs_path(config["schema_dir"])
+    os.makedirs(schema_dir, exist_ok=True)
+
+    csv_path = abs_path(config["enriched_path"])
+    baseline_schema_path = abs_path(config["processed_schema_path"])
+    report_path = os.path.join(abs_path(config["reports_dir"]), "schema_processed_report.json")
+
+    run_schema_checkpoint(
+        csv_path=csv_path,
+        baseline_schema_path=baseline_schema_path,
+        report_path=report_path,
+        required_columns=PROCESSED_REQUIRED_DEFAULT,
+        mode="enforce",
+        allow_new_columns=True,
     )
 
 
@@ -92,8 +126,6 @@ def task_quality(**context) -> bool:
         anomalies_path=os.path.join(reports_dir, "anomalies.json"),
     )
 
-    # If anomalies_found() is "too strict", it will cause skips.
-    # We'll fix strictness in src/quality.py.
     return not anomalies_found(anomalies)
 
 
@@ -152,6 +184,8 @@ def task_save_reports(**context):
     stats_path = os.path.join(reports_dir, "stats.json")
     anomalies_path = os.path.join(reports_dir, "anomalies.json")
     bias_path = os.path.join(reports_dir, "bias_report.json")
+    schema_raw_report = os.path.join(reports_dir, "schema_raw_report.json")
+    schema_processed_report = os.path.join(reports_dir, "schema_processed_report.json")
 
     summary = {
         "pipeline_run_date": datetime.now().isoformat(),
@@ -162,6 +196,10 @@ def task_save_reports(**context):
             "stats": safe_path(stats_path),
             "anomalies": safe_path(anomalies_path),
             "bias": safe_path(bias_path),
+            "schema_raw_report": safe_path(schema_raw_report),
+            "schema_processed_report": safe_path(schema_processed_report),
+            "raw_schema_baseline": safe_path(abs_path(config["raw_schema_path"])),
+            "processed_schema_baseline": safe_path(abs_path(config["processed_schema_path"])),
         },
         "notes": {
             "validate_short_circuit": ti.xcom_pull(task_ids="task_validate") is False,
@@ -199,7 +237,7 @@ def task_upload_firestore(**context):
 
 with DAG(
     dag_id="clinical_trials_data_pipeline",
-    description="Generalised clinical trials pipeline — pass condition via params",
+    description="Generalised clinical trials pipeline, pass condition via params",
     schedule_interval="@daily",
     start_date=datetime(2025, 1, 1),
     catchup=False,
@@ -212,16 +250,27 @@ with DAG(
         "email_on_failure": False,
     },
 ) as dag:
-
     fetch_raw = PythonOperator(
         task_id="task_fetch_raw",
         python_callable=task_fetch_raw,
         execution_timeout=timedelta(minutes=30),
     )
 
+    schema_raw = PythonOperator(
+        task_id="task_schema_raw",
+        python_callable=task_schema_raw,
+        execution_timeout=timedelta(minutes=5),
+    )
+
     enrich = PythonOperator(
         task_id="task_enrich",
         python_callable=task_enrich,
+        execution_timeout=timedelta(minutes=5),
+    )
+
+    schema_processed = PythonOperator(
+        task_id="task_schema_processed",
+        python_callable=task_schema_processed,
         execution_timeout=timedelta(minutes=5),
     )
 
@@ -281,4 +330,4 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    fetch_raw >> enrich >> validate >> quality >> [stats, anomaly, bias] >> save_reports >> [upload_gcs, upload_firestore]
+    fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality >> [stats, anomaly, bias] >> save_reports

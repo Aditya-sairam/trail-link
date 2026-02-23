@@ -1,15 +1,9 @@
-"""
-Condition registry for clinical trials pipeline.
-Add a new condition by adding one entry to REGISTRY.
-No new files needed.
-"""
+# pipelines/dags/src/conditions/registry.py
+
 import pandas as pd
 
 
-# ─── Classifiers ─────────────────────────────────────────────────────────────
-
 def classify_diabetes(conditions: str) -> str:
-    """Classify diabetes subtype from Conditions field."""
     if conditions is None or pd.isna(conditions):
         return "Unknown"
     c = str(conditions).lower()
@@ -30,7 +24,6 @@ def classify_diabetes(conditions: str) -> str:
 
 
 def classify_breast_cancer(conditions: str) -> str:
-    """Classify breast cancer subtype from Conditions field."""
     if conditions is None or pd.isna(conditions):
         return "Unknown"
     c = str(conditions).lower()
@@ -54,26 +47,27 @@ def classify_breast_cancer(conditions: str) -> str:
         return "Breast Cancer (General)"
 
 
-# ─── Registry ─────────────────────────────────────────────────────────────────
-# To add a new condition:
-# 1. Write a classify_<condition> function above
-# 2. Add one entry here — that's it
-
 REGISTRY = {
     "diabetes": {
-        "query":          "diabetes",
-        "disease":        "diabetes",
-        "raw_path":       "data/diabetes/raw/diabetes_trials_raw.csv",
-        "enriched_path":  "data/diabetes/processed/diabetes_trials_enriched.csv",
-        "reports_dir":    "data/diabetes/reports",
-        "classifier":     classify_diabetes,
+        "query": "diabetes",
+        "disease": "diabetes",
+        "raw_path": "data/diabetes/raw/diabetes_trials_raw.csv",
+        "enriched_path": "data/diabetes/processed/diabetes_trials_enriched.csv",
+        "reports_dir": "data/diabetes/reports",
+        "schema_dir": "data/diabetes/schema",
+        "raw_schema_path": "data/diabetes/schema/raw_schema.json",
+        "processed_schema_path": "data/diabetes/schema/processed_schema.json",
+        "classifier": classify_diabetes,
     },
     "breast_cancer": {
-        "query":          "breast cancer",
-        "disease":        "breast_cancer",
-        "raw_path":       "data/breast_cancer/raw/breast_cancer_trials_raw.csv",
-        "enriched_path":  "data/breast_cancer/processed/breast_cancer_trials_enriched.csv",
-        "reports_dir":    "data/breast_cancer/reports",
-        "classifier":     classify_breast_cancer,
+        "query": "breast cancer",
+        "disease": "breast_cancer",
+        "raw_path": "data/breast_cancer/raw/breast_cancer_trials_raw.csv",
+        "enriched_path": "data/breast_cancer/processed/breast_cancer_trials_enriched.csv",
+        "reports_dir": "data/breast_cancer/reports",
+        "schema_dir": "data/breast_cancer/schema",
+        "raw_schema_path": "data/breast_cancer/schema/raw_schema.json",
+        "processed_schema_path": "data/breast_cancer/schema/processed_schema.json",
+        "classifier": classify_breast_cancer,
     },
 }

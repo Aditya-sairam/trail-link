@@ -1,0 +1,10 @@
+{
+  "csv_path": "/opt/airflow/repo/data/breast_cancer/raw/breast_cancer_trials_raw.csv",
+  "baseline_schema_path": "/opt/airflow/repo/data/breast_cancer/schema/raw_schema.json",
+  "checked_at": "2026-02-23T04:56:34.590073",
+  "mode": "warn",
+  "passed": false,
+  "violations": [
+    "'Enrollment' has values > 2000000"
+  ]
+}
