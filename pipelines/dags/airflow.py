@@ -279,7 +279,7 @@ with DAG(
     schedule_interval="@daily",
     start_date=datetime(2025, 1, 1),
     catchup=False,
-    params={"condition": "diabetes"},
+    params={"condition": "breast_cancer"},
     tags=["mlops", "clinical-trials", "generalised"],
     default_args={
         "owner": "sanika",

@@ -213,7 +213,6 @@ data/
 ```
 
 ---
-
 ## Available Conditions
 
 You can trigger the pipeline for different medical conditions:
