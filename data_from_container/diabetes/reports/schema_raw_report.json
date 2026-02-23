@@ -1,0 +1,8 @@
+{
+  "csv_path": "/opt/airflow/repo/data/diabetes/raw/diabetes_trials_raw.csv",
+  "baseline_schema_path": "/opt/airflow/repo/data/diabetes/schema/raw_schema.json",
+  "checked_at": "2026-02-23T04:33:30.948138",
+  "mode": "enforce",
+  "passed": true,
+  "violations": []
+}

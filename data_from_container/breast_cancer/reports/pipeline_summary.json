@@ -1,12 +1,16 @@
 {
-  "pipeline_run_date": "2026-02-21T22:25:19.364974",
+  "pipeline_run_date": "2026-02-23T04:58:47.565657",
   "condition": "breast_cancer",
   "total_trials": 2449,
   "bias_level": "MEDIUM",
   "reports": {
     "stats": "/opt/airflow/repo/data/breast_cancer/reports/stats.json",
-    "anomalies": "/opt/airflow/repo/data/breast_cancer/reports/anomalies.json",
-    "bias": "/opt/airflow/repo/data/breast_cancer/reports/bias_report.json"
+    "anomalies": null,
+    "bias": "/opt/airflow/repo/data/breast_cancer/reports/bias_report.json",
+    "schema_raw_report": "/opt/airflow/repo/data/breast_cancer/reports/schema_raw_report.json",
+    "schema_processed_report": "/opt/airflow/repo/data/breast_cancer/reports/schema_processed_report.json",
+    "raw_schema_baseline": "/opt/airflow/repo/data/breast_cancer/schema/raw_schema.json",
+    "processed_schema_baseline": "/opt/airflow/repo/data/breast_cancer/schema/processed_schema.json"
   },
   "notes": {
     "validate_short_circuit": false,
