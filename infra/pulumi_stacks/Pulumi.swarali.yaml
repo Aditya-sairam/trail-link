@@ -1,4 +1,0 @@
-encryptionsalt: v1:kSoxunbxSL0=:v1:4OD1m+G6pHYeOMV/:/HJCeC8fxSIwbCALYzg1hhJ8OAIBmg==
-config:
-  gcp:project: datapipeline-infra
-  gcp:region: us-central1
