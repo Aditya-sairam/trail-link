@@ -28,6 +28,14 @@ from google.cloud import firestore
 log = logging.getLogger(__name__)
 
 
+def normalize_column_name(col: str) -> str:
+    """
+    Convert column names to snake_case.
+    Example: "NTC Number" -> "ntc_number"
+    """
+    return col.strip().lower().replace(" ", "_").replace("-", "_")
+
+
 def upload_enriched_to_firestore(
     enriched_file_path: str,
     condition: str,
@@ -40,7 +48,7 @@ def upload_enriched_to_firestore(
     Firestore structure:
         Collection : clinical_trials_{condition}
         Document ID: {NCT_ID}  (e.g. NCT01234567)
-        Fields     : all enriched CSV columns + condition + pipeline_run_date
+        Fields     : all enriched CSV columns (snake_case) + condition + pipeline_run_date
 
     Args:
         enriched_file_path: Local path to the enriched/processed CSV file.
@@ -57,13 +65,17 @@ def upload_enriched_to_firestore(
     if not os.path.exists(enriched_file_path):
         raise FileNotFoundError(f"Enriched CSV not found at: {enriched_file_path}")
 
+    # Read CSV and normalize column names to snake_case
     df = pd.read_csv(enriched_file_path)
+    df.columns = [normalize_column_name(col) for col in df.columns]
+    
     records = df.to_dict(orient="records")
 
     db = firestore.Client(project=project_id, database=database)
     collection = db.collection(f"clinical_trials_{condition}")
     run_date = datetime.now().strftime("%Y-%m-%d")
     uploaded = 0
+    skipped = 0
 
     for row in records:
         # Clean NaN values — Firestore doesn't accept float NaN
@@ -76,21 +88,22 @@ def upload_enriched_to_firestore(
         clean_row["condition"] = condition
         clean_row["pipeline_run_date"] = run_date
 
-        # Use NCT ID as document ID if available, else auto-generate
+        # Extract NCT ID (now in snake_case)
         nct_id = (
-            clean_row.get("NCTId")
-            or clean_row.get("nct_id")
-            or clean_row.get("id")
+            clean_row.get("nct_number")
+            or clean_row.get("nctnumber")
         )
 
         if nct_id:
-            # .set() overwrites if document already exists
+            # Use NCT ID as document ID (prevents duplicates!)
             collection.document(str(nct_id)).set(clean_row)
+            uploaded += 1
         else:
-            # No NCT ID — let Firestore auto-generate an ID
-            collection.add(clean_row)
+            log.warning(f"⚠️ Skipping trial without NCT ID: {clean_row.get('title', 'Unknown')}")
+            skipped += 1
 
-        uploaded += 1
-
-    log.info(f"✓ Uploaded {uploaded} documents → Firestore collection: clinical_trials_{condition}")
+    log.info(f"✓ Uploaded {uploaded} documents to Firestore collection: clinical_trials_{condition}")
+    if skipped > 0:
+        log.warning(f"⚠️ Skipped {skipped} trials without NCT ID")
+    
     return uploaded
