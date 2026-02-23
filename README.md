@@ -1,55 +1,602 @@
-# Trial-Link
+# TrialLink - Clinical Trial Matching Platform
 
-MLOps platform for clinical trial matching.
+MLOps-powered platform for connecting patients with relevant clinical trials using RAG (Retrieval Augmented Generation) and automated data pipelines.
 
-## Setup
+---
 
-1. Clone the repository
-2. Create and activate virtual environment:
+## Table of Contents
+- [Running Locally](#running-locally)
+- [Running on Google Cloud](#running-on-google-cloud)
+- [Project Structure](#project-structure)
+
+---
+
+## Running Locally
+
+Follow these steps to run the clinical trials data pipeline locally using Docker and Airflow. **No GCP account required** for local testing.
+
+### Prerequisites
+
+- Docker installed and running
+- Git
+
+### Step 1: Clone the Repository
+
 ```bash
-   python -m venv venv
-   source venv/bin/activate  # Mac/Linux
-```
-3. Install dependencies:
-```bash
-   pip install -r requirements.txt
-```
-
-## Project Structure
-
-- `infra/` - Infrastructure as code
-- `sdk/` - Python SDK for ML operations
-- `models/` - Model definitions and training scripts
-- `pipelines/` - ML pipelines
-- `tests/` - Test suite
-- `configs/` - Configuration files
-
-## How to setup and run pulumi
-
-**Step 1**: Install pulumi
-For MacOs :
-```bash
-   brew install pulumi/tap/pulumi
+git clone https://github.com/Aditya-sairam/trail-link
+cd trial-link
 ```
 
-For Linux:
-``` bash
+### Step 2: Build the Airflow Docker Image
+
+```bash
+# Navigate to the airflow directory
+cd pipelines
+
+# Build the Docker image
+docker build -t airflow-pipeline .
+```
+
+### Step 3: Run the Airflow Container
+
+```bash
+docker run -d -p 8081:8081 \
+  --name airflow-local \
+  -v $(pwd)/data:/opt/airflow/repo/data \
+  airflow-pipeline
+```
+
+**What this does:**
+- Runs Airflow on port 8081
+- Mounts data directory to persist outputs locally
+- Runs without GCP - all data stays in container
+
+### Step 4: Access Airflow UI
+
+Open your browser and navigate to:
+```
+http://localhost:8081
+```
+
+**Login credentials:**
+- Username: `admin`
+- Password: `admin`
+
+### Step 5: Trigger the Pipeline
+1. Navigate to the DAGs page
+2. Find `clinical_trials_data_pipeline`
+3. Click the **play button** (▶) on the right
+4. Click **"Trigger DAG w/ config"**
+5. Enter configuration:
+   ```json
+   {"condition": "diabetes"}
+   ```
+6. Click **Trigger**
+
+### Step 6: Monitor Pipeline Execution
+
+1. In the Airflow UI, click on the DAG run
+2. View the **Graph** view to see task progress
+3. Click individual tasks to view logs
+4. Wait for all tasks to complete (green checkmarks)
+
+**Pipeline tasks:**
+- `task_fetch_raw` - Fetch clinical trials from ClinicalTrials.gov
+- `task_enrich` - Process and enrich data
+- `task_validate` - Validate data quality
+- `task_quality` - Run quality checks
+- `task_stats` - Generate statistics
+- `task_anomaly` - Detect anomalies
+- `task_bias` - Analyze bias
+- `task_save_reports` - Save reports
+- `task_upload_gcs` - Upload to Google Cloud Storage
+- `task_upload_firestore` - Upload to Firestore
+
+### Step 7: Retrieve Generated Files
+
+Once the pipeline completes successfully, copy the output files from the container to your local machine:
+
+```bash
+# Copy all generated data for a specific condition
+docker cp <airflow-container-namme>:/opt/airflow/repo/data/diabetes ./diabetes-output
+```
+
+**Verify the files:**
+
+```bash
+# View directory structure
+ls -R diabetes-output/
+
+# Expected output:
+# diabetes-output/
+# ├── raw/
+# │   └── clinical_trials.csv
+# ├── enriched/
+# │   └── enriched_trials.csv
+# ├── schema/
+# │   ├── raw_schema.json
+# │   └── processed_schema.json
+# └── reports/
+#     ├── pipeline_summary.json
+#     ├── stats.json
+#     ├── quality_stats.json
+#     ├── anomalies.json
+#     ├── bias_report.json
+#     ├── schema_raw_report.json
+#     └── schema_processed_report.json
+
+# View the pipeline summary
+cat diabetes-output/reports/pipeline_summary.json
+```
+
+**Note:** The upload tasks (`task_upload_gcs` and `task_upload_firestore`) will show as **skipped** in the Airflow UI when running locally without GCP configuration. This is expected behavior.
+
+### Step 8: Stop and Clean Up
+
+```bash
+# Stop the container
+docker stop airflow-local
+
+# Remove the container
+docker rm airflow-local
+
+# (Optional) Remove the image
+docker rmi airflow-pipeline
+
+# (Optional) Clean up downloaded data
+rm -rf pipeline-output/
+```
+
+---
+
+## Troubleshooting (Local Setup)
+
+### Issue: "Port 8081 already in use"
+
+**Solution:**
+```bash
+# Use a different port
+docker run -p 8082:8081 ...
+# Then access: http://localhost:8082
+```
+
+### Issue: DAGs not appearing in UI
+
+**Solution:**
+- Wait 30-60 seconds for Airflow to scan DAGs
+- Check container logs: `docker logs airflow-local`
+- Verify DAGs directory is mounted correctly
+
+### Issue: Container crashes or exits immediately
+
+**Solution:**
+```bash
+# Check logs
+docker logs airflow-local
+
+# Common issue: Memory - increase Docker memory limit to 4GB
+```
+
+### Issue: Cannot copy files from container
+
+**Solution:**
+```bash
+# Verify container is running
+docker ps
+
+# If stopped, start it
+docker start airflow-local
+
+# Then copy files
+docker cp airflow-local:/opt/airflow/repo/data ./
+```
+
+---
+
+## Expected Output
+
+After successful pipeline execution, you should have:
+
+```
+data/
+└── diabetes/
+    ├── raw/
+    │   └── clinical_trials.csv          (Fetched trials)
+    ├── enriched/
+    │   └── enriched_trials.csv          (Processed trials)
+    └── reports/
+        ├── pipeline_summary.json        (Overall summary)
+        ├── stats.json                   (Data statistics)
+        ├── quality_stats.json           (Quality metrics)
+        ├── anomalies.json               (Detected anomalies)
+        └── bias_report.json             (Bias analysis)
+```
+
+---
+
+## Available Conditions
+
+You can trigger the pipeline for different medical conditions:
+- `diabetes`
+- `breast_cancer`
+---
+
+# Option 2:
+
+## Running on Google Cloud Platform
+
+This guide walks through deploying the complete infrastructure and running the clinical trials pipeline on GCP. 
+**Pulumi** (Infrastructure as Code tool using Python) automates the creation of all required cloud resources.
+
+---
+
+## Prerequisites
+
+- Google Cloud account with billing enabled
+- Terminal/command line access
+
+---
+
+## Step 1: Install Google Cloud CLI
+
+**macOS:**
+```bash
+brew install google-cloud-sdk
+```
+
+**Linux:**
+```bash
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+```
+
+**Windows:**  
+Download from https://cloud.google.com/sdk/docs/install
+
+**Verify installation:**
+```bash
+gcloud version
+```
+
+---
+
+## Step 2: Authenticate to Google Cloud
+
+```bash
+# Login to your Google account
+gcloud auth login
+
+# Set up application default credentials (needed for Pulumi, Docker, and applications)
+gcloud auth application-default login
+
+# Set your GCP project ID (replace with your actual project ID)
+gcloud config set project YOUR_PROJECT_ID
+
+# Configure Docker to authenticate with Artifact Registry
+gcloud auth configure-docker us-central1-docker.pkg.dev
+```
+
+---
+
+## Step 3: Enable Required GCP APIs
+
+```bash
+gcloud services enable run.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+gcloud services enable firestore.googleapis.com
+gcloud services enable storage.googleapis.com
+gcloud services enable cloudfunctions.googleapis.com
+```
+
+---
+
+## Step 4: Install Pulumi
+
+**macOS:**
+```bash
+brew install pulumi/tap/pulumi
+```
+
+**Linux:**
+```bash
 curl -fsSL https://get.pulumi.com | sh
 ```
 
-**Step 2:**  Login to pulumi (Please stick with the GCP bucket method)
+**Windows:**
+```bash
+choco install pulumi
 ```
+
+**Verify installation:**
+```bash
+pulumi version
+```
+
+---
+
+## Step 5: Configure Pulumi State Storage
+
+Pulumi stores infrastructure state in a backend. We'll use Google Cloud Storage:
+
+```bash
+# Create GCS bucket for Pulumi state files
 gcloud storage buckets create gs://pulumi-state-YOUR_PROJECT_ID --location=US
+
+# Configure Pulumi to use this bucket
 pulumi login gs://pulumi-state-YOUR_PROJECT_ID
+
+# Set encryption passphrase for secrets (remember this!)
+export PULUMI_CONFIG_PASSPHRASE="your-secure-passphrase"
 ```
-**step 3:**
-```
+
+---
+
+## Step 6: Install Pulumi Dependencies
+
+```bash
+# Navigate to Pulumi infrastructure directory
 cd infra/pulumi_stacks
+
+# Install Python dependencies
+pip install -r requirements.txt
 ```
 
-**step 4:** Create stacks you want to push
-```
-pulumi preview #Previews the changes that will be pushed
-pulumi up # Pushes the changes to infra
+---
+
+## Step 7: Deploy Infrastructure with Pulumi
+
+```bash
+# Preview what will be created (optional but recommended)
+pulumi preview
+
+# Deploy all infrastructure
+pulumi up
+
+# Type 'yes' when prompted to confirm deployment
 ```
 
+**What Pulumi creates:**
+- Artifact Registry repository (stores Docker images)
+- Firestore database (stores clinical trials and patient data)
+- Cloud Storage buckets (stores raw clinical trial data)
+- Cloud Run service (Patient CRUD API)
+- Service accounts with IAM permissions
+
+**Note:** First deployment takes 5-10 minutes.
+
+---
+
+## Step 8: Verify Infrastructure Deployment
+
+```bash
+# View all deployed resources and their outputs
+pulumi stack output
+
+# Check specific outputs
+pulumi stack output dev_api_url
+pulumi stack output dev_firestore_db
+pulumi stack output dev_clinical_trials_bucket
+```
+
+**Verify in GCP Console:**
+- Navigate to https://console.cloud.google.com
+- Check **Cloud Run** → Should see `patient-api-dev` service
+- Check **Firestore** → Should see database created
+- Check **Cloud Storage** → Should see buckets created
+
+---
+
+## Step 9: Export Environment Variables
+
+Export Pulumi outputs to environment variables (needed for Airflow):
+
+```bash
+# IMPORTANT: Run these commands in the SAME terminal where you'll run Docker
+
+export BUCKET_NAME=$(pulumi stack output dev_clinical_trials_bucket)
+export FIRESTORE_DB=$(pulumi stack output dev_firestore_db)
+export PROJECT_ID=$(pulumi config get gcp:project)
+
+# Verify exports
+echo "Bucket: $BUCKET_NAME"
+echo "Firestore: $FIRESTORE_DB"
+echo "Project: $PROJECT_ID"
+```
+
+**⚠️ Important:** These variables only exist in your current terminal session. Keep this terminal open!
+
+---
+
+## Step 10: Build and Run Airflow with GCP Configuration
+
+**In the SAME terminal where you exported variables:**
+
+```bash
+# Navigate to airflow directory
+cd ../../pipelines
+
+# Build Airflow Docker image
+docker build -t airflow-pipeline .
+
+# Run Airflow with GCP credentials and configuration
+docker run -d -p 8081:8081 \
+  --name airflow-gcp \
+  -e RAW_CLINICAL_TRIALS_STORAGE=$BUCKET_NAME \
+  -e GCP_PROJECT_ID=$PROJECT_ID \
+  -e CLINICAL_TRIALS_FIRESTORE=$FIRESTORE_DB \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/home/airflow/.config/gcloud/application_default_credentials.json \
+  -v ~/.config/gcloud/application_default_credentials.json:/home/airflow/.config/gcloud/application_default_credentials.json:ro \
+  -v $(pwd)/data:/opt/airflow/repo/data \
+  airflow-pipeline
+
+```
+---
+
+## Step 11: Trigger the Data Pipeline
+
+**Option A: Via Airflow UI**
+1. Open http://localhost:8081
+2. Login with username: `admin`, password: `admin`
+3. Find the `clinical_trials_data_pipeline` DAG
+4. Click the **play button** (▶)
+5. Click **"Trigger DAG w/ config"**
+6. Enter: `{"condition": "diabetes"}`
+7. Click **Trigger**
+---
+
+## Step 12: Monitor Pipeline Execution
+
+**In Airflow UI:**
+1. Click on the running DAG instance
+2. View **Graph** to see task progress
+3. Tasks should complete in order:
+   - Fetch → Schema Check → Enrich → Validate → Quality → Stats/Anomaly/Bias → Save Reports → **GCP Upload** ✅
+
+**Key difference from local run:** The `task_upload_gcs` and `task_upload_firestore` tasks should show as **succeeded** (green), not skipped!
+
+---
+
+## Step 13: Verify Data in Google Cloud
+
+After pipeline completes successfully:
+
+### **Check Cloud Storage:**
+
+```bash
+# List uploaded files
+gsutil ls -r gs://$BUCKET_NAME/
+
+# View diabetes trial data
+gsutil cat gs://$BUCKET_NAME/diabetes/raw_clinical_trials.json | head -20
+```
+
+**Or via GCP Console:**
+- Navigate to https://console.cloud.google.com/storage
+- Find your bucket (e.g., `triallink-pipeline-data-dev-...`)
+- Browse to `diabetes/` folder
+- Verify `raw_clinical_trials.json` exists
+
+---
+
+### **Check Firestore:**
+
+```bash
+# List Firestore collections
+gcloud firestore collections list --database=$FIRESTORE_DB
+
+# View documents in clinical_trials collection
+gcloud firestore documents list diabetes_trials --database=$FIRESTORE_DB --limit 5
+```
+
+**Or via GCP Console:**
+- Navigate to https://console.cloud.google.com/firestore
+- Select your database
+- Browse collections to see uploaded trial documents
+
+---
+
+## Step 14: Clean Up Resources
+
+**⚠️ Important:** Destroy resources when done to avoid ongoing charges.
+
+```bash
+# Stop and remove Airflow container
+docker stop airflow-gcp
+docker rm airflow-gcp
+
+# Navigate to Pulumi directory
+cd infra/pulumi_stacks
+
+# Preview what will be destroyed
+pulumi destroy --preview
+
+# Destroy all cloud resources
+pulumi destroy
+
+# Confirm by typing 'yes'
+```
+
+**This deletes:**
+- All Cloud Run services
+- Firestore databases
+- Cloud Storage buckets (and their contents)
+- Artifact Registry repositories
+- Service accounts
+
+---
+
+## Alternative: All-in-One Deployment Script
+
+For easier deployment, create `deploy-to-gcp.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+echo "🚀 Deploying infrastructure with Pulumi..."
+cd infra/pulumi_stacks
+export PULUMI_CONFIG_PASSPHRASE="your-passphrase"
+pulumi up --yes
+
+echo "📝 Exporting configuration..."
+export BUCKET_NAME=$(pulumi stack output dev_clinical_trials_bucket)
+export FIRESTORE_DB=$(pulumi stack output dev_firestore_db)
+export PROJECT_ID=$(pulumi config get gcp:project)
+
+echo "✅ Infrastructure deployed:"
+echo "  Bucket: $BUCKET_NAME"
+echo "  Firestore: $FIRESTORE_DB"
+echo "  Project: $PROJECT_ID"
+
+echo "🐳 Building and running Airflow..."
+cd ../../airflow
+docker build -t airflow-pipeline -f Dockerfile.airflow .
+
+docker run -d -p 8081:8081 \
+  --name airflow-gcp \
+  -e RAW_CLINICAL_TRIALS_STORAGE=$BUCKET_NAME \
+  -e GCP_PROJECT_ID=$PROJECT_ID \
+  -e CLINICAL_TRIALS_FIRESTORE=$FIRESTORE_DB \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/home/airflow/.config/gcloud/application_default_credentials.json \
+  -v ~/.config/gcloud/application_default_credentials.json:/home/airflow/.config/gcloud/application_default_credentials.json:ro \
+  -v $(pwd)/data:/opt/airflow/repo/data \
+  airflow-pipeline
+
+echo "✅ Setup complete!"
+echo "🌐 Airflow UI: http://localhost:8081"
+echo "🔍 Verify env vars: docker exec airflow-gcp env | grep BUCKET"
+```
+
+**Usage:**
+```bash
+chmod +x deploy-to-gcp.sh
+./deploy-to-gcp.sh
+```
+
+---
+
+## Troubleshooting
+
+### Environment variables not set in container
+
+**Issue:** Docker container doesn't have the env vars.
+
+**Solution:** Export variables and run Docker in the **same terminal session**, or use the deployment script above.
+
+```bash
+# Verify in container
+docker exec airflow-gcp env | grep BUCKET
+```
+
+### Upload tasks still skipped despite GCP configuration
+
+**Check the logs:**
+```bash
+docker logs airflow-gcp | grep "GCP configuration"
+```
+
+Should show: `✅ GCP configuration complete - uploads to GCS and Firestore enabled`
+
+If it shows incomplete configuration, check that ALL env vars are set correctly.
+
+---

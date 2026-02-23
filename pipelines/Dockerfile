@@ -9,7 +9,7 @@ COPY dags/ /opt/airflow/dags/
 
 COPY requirements.txt /opt/airflow/
 
-RUN pip install "dvc[gs]"
+# RUN pip install "dvc[gs]"
 
 RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt
 

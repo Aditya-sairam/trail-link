@@ -24,9 +24,11 @@ from src.firestore_upload import upload_enriched_to_firestore
 
 
 BASE = os.getenv("TRAILLINK_BASE", "/opt/airflow/repo")
-BUCKET_NAME  = os.getenv("RAW_CLINICAL_TRIALS_STORAGE", "triallink-pipeline-data-mlops-test-project-486922")
-PROJECT_ID   = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
-FIRESTORE_DB = os.getenv("CLINICAL_TRIALS_FIRESTORE", "clinical-trials-db")
+BUCKET_NAME  = os.getenv("BUCKET_NAME")
+PROJECT_ID   = os.getenv("GCP_PROJECT_ID")
+FIRESTORE_DB = os.getenv("FIRESTORE_DB")
+GOOGLE_CREDS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
 log = logging.getLogger(__name__)
 
 
@@ -53,6 +55,39 @@ def get_xcom(ti, task_id: str, key: str, default=None):
     return default if val is None else val
 
 
+def check_gcp_config() -> bool:
+    """
+    Check if GCP configuration is available for upload tasks.
+    Returns True if all required env vars are set and credentials exist.
+    """
+    has_bucket = BUCKET_NAME is not None
+    has_project = PROJECT_ID is not None
+    has_firestore = FIRESTORE_DB is not None
+    has_creds = GOOGLE_CREDS is not None and os.path.exists(GOOGLE_CREDS)
+    
+    gcp_configured = has_bucket and has_project and has_firestore and has_creds
+    
+    if not gcp_configured:
+        log.warning("⚠️ GCP configuration incomplete - upload tasks will be skipped")
+        log.warning(f"  RAW_CLINICAL_TRIALS_STORAGE: {'✓' if has_bucket else '✗ Not set'}")
+        log.warning(f"  GCP_PROJECT_ID: {'✓' if has_project else '✗ Not set'}")
+        log.warning(f"  CLINICAL_TRIALS_FIRESTORE: {'✓' if has_firestore else '✗ Not set'}")
+        log.warning(f"  GOOGLE_APPLICATION_CREDENTIALS: {'✓' if has_creds else '✗ Not found'}")
+        log.info("💡 Pipeline will run locally. Use 'docker cp' to retrieve output files.")
+    else:
+        log.info("✅ GCP configuration complete - uploads to GCS and Firestore enabled")
+    
+    return gcp_configured
+
+
+def task_check_gcp_config(**context) -> bool:
+    """
+    ShortCircuit operator to check if GCP upload should proceed.
+    Returns False to skip downstream upload tasks if config missing.
+    """
+    return check_gcp_config()
+
+
 def task_fetch_raw(**context):
     config = get_config(context)
     download_raw_trials_csv(
@@ -72,13 +107,13 @@ def task_schema_raw(**context):
     report_path = os.path.join(abs_path(config["reports_dir"]), "schema_raw_report.json")
 
     run_schema_checkpoint(
-    csv_path=csv_path,
-    baseline_schema_path=baseline_schema_path,
-    report_path=report_path,
-    required_columns=RAW_REQUIRED_DEFAULT,
-    mode="warn", 
-    allow_new_columns=True,
-)
+        csv_path=csv_path,
+        baseline_schema_path=baseline_schema_path,
+        report_path=report_path,
+        required_columns=RAW_REQUIRED_DEFAULT,
+        mode="warn", 
+        allow_new_columns=True,
+    )
 
 
 def task_enrich(**context):
@@ -192,6 +227,7 @@ def task_save_reports(**context):
         "condition": config["disease"],
         "total_trials": total,
         "bias_level": bias_level,
+        "gcp_uploads_enabled": check_gcp_config(),
         "reports": {
             "stats": safe_path(stats_path),
             "anomalies": safe_path(anomalies_path),
@@ -212,6 +248,7 @@ def task_save_reports(**context):
 
     log.info(f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}")
 
+
 def task_upload_gcs(**context):
     config = get_config(context)
     log.info("Uploading raw data in json format to GCS bucket!!")
@@ -222,6 +259,7 @@ def task_upload_gcs(**context):
         project_id=PROJECT_ID,
     )
     log.info("Successfully Uploaded raw data in json format to GCS bucket!!")
+
 
 def task_upload_firestore(**context):
     config = get_config(context)
@@ -250,6 +288,7 @@ with DAG(
         "email_on_failure": False,
     },
 ) as dag:
+    
     fetch_raw = PythonOperator(
         task_id="task_fetch_raw",
         python_callable=task_fetch_raw,
@@ -316,18 +355,34 @@ with DAG(
         trigger_rule="all_done",
     )
 
+    # Check GCP configuration before upload tasks
+    check_gcp = ShortCircuitOperator(
+        task_id="task_check_gcp_config",
+        python_callable=task_check_gcp_config,
+        execution_timeout=timedelta(minutes=1),
+    )
+
     upload_gcs = PythonOperator(
         task_id="task_upload_gcs",
         python_callable=task_upload_gcs,
         execution_timeout=timedelta(minutes=10),
-        trigger_rule="all_done",
     )
 
     upload_firestore = PythonOperator(
         task_id="task_upload_firestore",
         python_callable=task_upload_firestore,
         execution_timeout=timedelta(minutes=15),
-        trigger_rule="all_done",
     )
 
-    fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality >> [stats, anomaly, bias] >> save_reports
+    # Pipeline flow - main processing (always runs)
+    fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality >> [stats, anomaly, bias]
+    
+    # Wait for all analysis tasks to complete
+    [stats, anomaly, bias] >> save_reports
+    
+    # Check GCP config AFTER save_reports completes
+    save_reports >> check_gcp
+    
+    # Upload tasks only run if check_gcp returns True
+    check_gcp >> upload_gcs
+    check_gcp >> upload_firestore
