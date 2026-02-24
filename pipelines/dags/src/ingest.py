@@ -2,14 +2,83 @@
 Common ingestion module for clinical trials.
 Works for ANY condition via the condition registry.
 """
+from __future__ import annotations
+
 import os
 import time
 import logging
 import requests
 import pandas as pd
-from typing import Callable
+from typing import Callable, Optional, List
+
 
 log = logging.getLogger(__name__)
+
+def _parse_partial_date(date_str: str) -> Optional[datetime]:
+    """
+    ClinicalTrials sometimes returns yyyy, yyyy-mm, or yyyy-mm-dd.
+    Convert to datetime for comparison.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return None
+
+    date_str = date_str.strip()
+    fmts = ["%Y-%m-%d", "%Y-%m", "%Y"]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def get_latest_update_date(
+    condition_query: str,
+    status: str = "RECRUITING",
+    page_size: int = 100,
+    sleep_seconds: float = 0.0,
+) -> Optional[str]:
+    """
+    Quick metadata check.
+    Fetches a small slice and returns the max 'lastUpdateSubmitDate' we see.
+    If API returns nothing usable, returns None.
+    """
+    url = "https://clinicaltrials.gov/api/v2/studies"
+    params = {
+        "query.cond": condition_query,
+        "filter.overallStatus": status,
+        "pageSize": page_size,
+        "format": "json",
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.RequestException as e:
+        log.error(f"Latest update check failed: {e}")
+        return None
+
+    studies = data.get("studies", [])
+    best_dt = None
+    best_raw = None
+
+    for s in studies:
+        try:
+            proto = s.get("protocolSection", {})
+            status_mod = proto.get("statusModule", {})
+            raw = status_mod.get("lastUpdateSubmitDate", "")
+            dt = _parse_partial_date(raw)
+            if dt and (best_dt is None or dt > best_dt):
+                best_dt = dt
+                best_raw = raw
+        except Exception:
+            continue
+
+    if sleep_seconds:
+        time.sleep(sleep_seconds)
+
+    return best_raw
 
 
 def extract_study(study: dict) -> dict:
@@ -169,3 +238,79 @@ def enrich_trials_csv(
         log.info(f"  {dtype:40} {count:,}")
 
     return df
+
+def get_recent_nct_ids_since(
+    *,
+    condition_query: str,
+    status: str,
+    since_date: str,
+    page_size: int = 100,
+    max_ids: int = 500,
+    sleep_seconds: float = 0.2,
+) -> List[str]:
+    """
+    Fetch a bounded list of NCT IDs that appear newer than `since_date`.
+
+    Strategy:
+    - Query API sorted by last update descending.
+    - As soon as we see lastUpdateSubmitDate <= since_date, stop scanning.
+    - Return collected NCT IDs (up to max_ids).
+
+    This gives us a "candidate set" to check against Firestore.
+    """
+    url = "https://clinicaltrials.gov/api/v2/studies"
+
+    params = {
+        "query.cond": condition_query,
+        "filter.overallStatus": status,
+        "pageSize": page_size,
+        "format": "json",
+        # If your API accepts this, it is ideal.
+        # If your repo already uses a different sort key in get_latest_update_date,
+        # replace this with the same one you know works.
+        "sort": "LastUpdateSubmitDate:desc",
+    }
+
+    out: List[str] = []
+    next_page_token: Optional[str] = None
+    page_num = 0
+
+    while len(out) < max_ids:
+        if next_page_token:
+            params["pageToken"] = next_page_token
+
+        r = requests.get(url, params=params, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+
+        studies = data.get("studies", [])
+        if not studies:
+            break
+
+        page_num += 1
+        log.info(f"[recent] Page {page_num}: {len(studies)} studies scanned")
+
+        for s in studies:
+            proto = s.get("protocolSection", {})
+            ident = proto.get("identificationModule", {})
+            status_mod = proto.get("statusModule", {})
+
+            nct = ident.get("nctId")
+            last_update = status_mod.get("lastUpdateSubmitDate")
+
+            # If the API is sorted newest first, we can stop early
+            if last_update and since_date and str(last_update) <= str(since_date):
+                return out
+
+            if nct:
+                out.append(str(nct))
+                if len(out) >= max_ids:
+                    return out
+
+        next_page_token = data.get("nextPageToken")
+        if not next_page_token:
+            break
+
+        time.sleep(sleep_seconds)
+
+    return out

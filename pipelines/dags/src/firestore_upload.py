@@ -16,11 +16,13 @@ Usage:
     )
 """
 
+
 from __future__ import annotations
 
 import logging
 import os
 from datetime import datetime
+from typing import Iterable, List
 
 import pandas as pd
 from google.cloud import firestore
@@ -35,6 +37,41 @@ def normalize_column_name(col: str) -> str:
     """
     return col.strip().lower().replace(" ", "_").replace("-", "_")
 
+
+def get_pipeline_watermark(
+    project_id: str,
+    database: str,
+    condition: str,
+) -> Optional[str]:
+    """
+    Reads the last_successful_update watermark from Firestore.
+    Stored under collection 'pipeline_state', document = condition.
+    """
+    db = firestore.Client(project=project_id, database=database)
+    doc = db.collection("pipeline_state").document(condition).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    return data.get("last_successful_update")
+
+
+def set_pipeline_watermark(
+    project_id: str,
+    database: str,
+    condition: str,
+    last_successful_update: str,
+) -> None:
+    """
+    Writes the watermark to Firestore.
+    """
+    db = firestore.Client(project=project_id, database=database)
+    db.collection("pipeline_state").document(condition).set(
+        {
+            "last_successful_update": last_successful_update,
+            "updated_at": datetime.now().isoformat(),
+        },
+        merge=True,
+    )
 
 def upload_enriched_to_firestore(
     enriched_file_path: str,
@@ -107,3 +144,36 @@ def upload_enriched_to_firestore(
         log.warning(f"⚠️ Skipped {skipped} trials without NCT ID")
     
     return uploaded
+
+
+
+def missing_nct_ids_in_firestore(
+    *,
+    project_id: str,
+    database: str,
+    condition: str,
+    nct_ids: Iterable[str],
+) -> List[str]:
+    """
+    Given a list of NCT IDs, return the subset that do NOT exist in Firestore.
+
+    Collection: clinical_trials_{condition}
+    Document ID: NCT ID (string)
+    """
+    ids = [str(x) for x in nct_ids if x]
+    if not ids:
+        return []
+
+    db = firestore.Client(project=project_id, database=database)
+    collection = db.collection(f"clinical_trials_{condition}")
+
+    # Build doc refs and fetch in batch
+    doc_refs = [collection.document(nct_id) for nct_id in ids]
+    snaps = db.get_all(doc_refs)
+
+    missing: List[str] = []
+    for snap in snaps:
+        if not snap.exists:
+            missing.append(snap.id)
+
+    return missing
