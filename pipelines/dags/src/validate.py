@@ -18,7 +18,7 @@ REQUIRED_COLUMNS = [
 ]
 
 
-def run_validation(enriched_file_path: str) -> bool:
+def run_validation(enriched_file_path: str, min_rows: int = 10) -> bool:
     """Run all validation checks. Returns True if passes."""
     if not os.path.exists(enriched_file_path):
         log.error(f"❌ File not found: {enriched_file_path}")
@@ -32,8 +32,8 @@ def run_validation(enriched_file_path: str) -> bool:
     # Empty check
     if len(df) == 0:
         errors.append("Dataset is empty")
-    elif len(df) < 10:
-        errors.append(f"Too few rows: {len(df)}")
+    elif len(df) < min_rows:
+        errors.append(f"Too few rows: {len(df)} (minimum={min_rows})")
 
     # Schema check
     missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
