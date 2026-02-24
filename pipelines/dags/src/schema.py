@@ -32,9 +32,7 @@ DEFAULT_CATEGORICAL_LIMITS = {
     "Sex": {"allowed": ["ALL", "FEMALE", "MALE"]},
 }
 
-DEFAULT_NUMERIC_RANGES = {
-    "Enrollment": {"min": 0, "max": 2_000_000},
-}
+DEFAULT_NUMERIC_RANGES = {}
 
 
 def _dtype_family(s: pd.Series) -> str:
