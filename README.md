@@ -75,17 +75,25 @@ http://localhost:8081
 3. Click individual tasks to view logs
 4. Wait for all tasks to complete (green checkmarks)
 
-**Pipeline tasks:**
-- `fetch_raw` - Fetch clinical trials from ClinicalTrials.gov
-- `task_enrich` - Process and enrich data
-- `task_validate` - Validate data quality
-- `task_quality` - Run quality checks
-- `task_stats` - Generate statistics
-- `task_anomaly` - Detect anomalies
-- `task_bias` - Analyze bias
-- `task_save_reports` - Save reports
-- `task_upload_gcs` - Upload to Google Cloud Storage
-- `task_upload_firestore` - Upload to Firestore
+**Task Groups:**
+- `diabetes_pipeline` - Complete processing pipeline for diabetes trials
+- `breast_cancer_pipeline` - Complete processing pipeline for breast cancer trials
+
+**Tasks per condition (executed in parallel):**
+- `fetch_raw` - Fetch clinical trials from ClinicalTrials.gov for the specific condition
+- `schema_raw` - Validate raw data schema against baseline
+- `enrich` - Process and enrich trials data with eligibility parsing and classification
+- `schema_processed` - Validate processed data schema compliance
+- `validate` - Validate data quality (short-circuits if validation fails)
+- `quality` - Run quality checks for anomalies (short-circuits if critical issues found)
+- `stats` - Generate statistics report (total trials, distributions)
+- `anomaly` - Detect and log data anomalies
+- `bias` - Analyze demographic and geographic bias
+- `save_reports` - Consolidate and save all reports locally
+- `check_gcp_config` - Verify GCP credentials and configuration (short-circuits uploads if missing)
+- `upload_raw_files_gcs` - Upload raw trial data to Google Cloud Storage
+- `upload_reports_gcs` - Upload all reports to Google Cloud Storage
+- `upload_firestore` - Upload enriched trials to Firestore database
 
 ### Step 7: Retrieve Generated Files
 
@@ -322,6 +330,46 @@ pulumi login gs://pulumi-state-YOUR_PROJECT_ID
 # Set encryption passphrase for secrets (remember this!)
 export PULUMI_CONFIG_PASSPHRASE="your-secure-passphrase"
 ```
+
+### Infrastructure Overview
+
+The infrastructure is managed using Pulumi (Infrastructure as Code) with Python, organized into modular stacks.
+
+### Directory Structure
+```
+infra/
+├── pulumi_stacks/
+│   ├── dataPipelineStack.py    # Defines GCP resources for data pipeline (Composer, GCS, Firestore, etc.)
+│   └── patientStack.py          # Defines patient-facing app infrastructure (not in scope for data pipeline submission)
+├── Pulumi.yaml                  # Project configuration (project name, runtime, description)
+├── Pulumi.dev.yaml              # Environment-specific config for 'dev' stack (GCP project ID, region, secrets)
+└── requirements.txt             # Python dependencies for Pulumi (pulumi, pulumi-gcp, etc.)
+```
+
+### File Descriptions
+
+**`dataPipelineStack.py`**
+- Defines all GCP resources for the clinical trials data pipeline
+- Creates Cloud run environment (managed Airflow) - *optional, for production deployments (currently disabled)*
+- Provisions Cloud Storage buckets for raw data , dvc and reports
+- Sets up Firestore database for enriched trial storage
+- Configures IAM roles and permissions
+
+**`patientStack.py`**
+- Defines infrastructure for patient-facing matching application
+- *(Not in scope for data pipeline submission)*
+
+**`Pulumi.yaml`**
+- Project metadata (name, runtime, description)
+- Specifies Python as the runtime language
+
+**`Pulumi.dev.yaml`**
+- Environment-specific configuration for the `dev` stack
+- Contains GCP project ID, region, bucket names, Firestore database name
+- Keeps secrets and environment variables separate from code
+
+**`requirements.txt`**
+- Lists Pulumi dependencies (`pulumi>=3.0.0`, `pulumi-gcp>=7.0.0`)
 
 ---
 
