@@ -67,11 +67,6 @@ http://localhost:8081
 2. Find `clinical_trials_data_pipeline`
 3. Click the **play button** (▶) on the right
 4. Click **"Trigger DAG w/ config"**
-5. Enter configuration:
-   ```json
-   {"condition": "diabetes"}
-   ```
-6. Click **Trigger**
 
 ### Step 6: Monitor Pipeline Execution
 
@@ -81,7 +76,7 @@ http://localhost:8081
 4. Wait for all tasks to complete (green checkmarks)
 
 **Pipeline tasks:**
-- `task_fetch_raw` - Fetch clinical trials from ClinicalTrials.gov
+- `fetch_raw` - Fetch clinical trials from ClinicalTrials.gov
 - `task_enrich` - Process and enrich data
 - `task_validate` - Validate data quality
 - `task_quality` - Run quality checks
@@ -98,7 +93,7 @@ Once the pipeline completes successfully, copy the output files from the contain
 
 ```bash
 # Copy all generated data for a specific condition
-docker cp <airflow-container-namme>:/opt/airflow/repo/data/diabetes ./diabetes-output
+docker cp <airflow-container-namme>:/opt/airflow/repo/data/diabetes <to a folder of your choice>
 ```
 
 **Verify the files:**
@@ -370,11 +365,6 @@ pulumi up
 ```bash
 # View all deployed resources and their outputs
 pulumi stack output
-
-# Check specific outputs
-pulumi stack output dev_api_url
-pulumi stack output dev_firestore_db
-pulumi stack output dev_clinical_trials_bucket
 ```
 
 **Verify in GCP Console:**
@@ -392,8 +382,8 @@ Export Pulumi outputs to environment variables (needed for Airflow):
 ```bash
 # IMPORTANT: Run these commands in the SAME terminal where you'll run Docker
 
-export BUCKET_NAME=$(pulumi stack output dev_clinical_trials_bucket)
-export FIRESTORE_DB=$(pulumi stack output dev_firestore_db)
+export BUCKET_NAME=$(pulumi stack output RAW_CLINICAL_TRIALS_STORAGE)
+export FIRESTORE_DB=$(pulumi stack output CLINICAL_TRIALS_FIRESTORE)
 export PROJECT_ID=$(pulumi config get gcp:project)
 
 # Verify exports
