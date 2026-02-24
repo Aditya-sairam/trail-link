@@ -17,8 +17,8 @@ from airflow.operators.python import PythonOperator
 # ============================================================
 # Configuration
 # ============================================================
-BUCKET_NAME = os.getenv("CLINICAL_TRIALS_BUCKET", "")
-PROJECT_ID = os.getenv("GCP_PROJECT_ID", "")
+BUCKET_NAME = os.getenv("CLINICAL_TRIALS_BUCKET", "Empty_Value")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "Empty_value")
 CONDITION = "diabetes"
 STATUSES = "RECRUITING|ACTIVE_NOT_RECRUITING|ENROLLING_BY_INVITATION"
 PAGE_SIZE = 1000

@@ -19,7 +19,7 @@ from src.quality import anomalies_found, run_quality_checks
 from src.schema import run_schema_checkpoint, RAW_REQUIRED_DEFAULT, PROCESSED_REQUIRED_DEFAULT
 from src.stats import compute_stats
 from src.validate import run_validation
-from src.gcs_upload import upload_raw_to_gcs
+from src.gcs_upload import upload_raw_to_gcs, upload_reports_to_gcs
 from src.firestore_upload import upload_enriched_to_firestore
 
 
@@ -249,7 +249,7 @@ def task_save_reports(**context):
     log.info(f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}")
 
 
-def task_upload_gcs(**context):
+def task_upload_raw_files_gcs(**context):
     config = get_config(context)
     log.info("Uploading raw data in json format to GCS bucket!!")
     upload_raw_to_gcs(
@@ -259,6 +259,17 @@ def task_upload_gcs(**context):
         project_id=PROJECT_ID,
     )
     log.info("Successfully Uploaded raw data in json format to GCS bucket!!")
+
+def task_upload_reports_gcs(**context):
+    config = get_config(context)
+    log.info("Uploading reports to GCS bucket!!")
+    upload_reports_to_gcs(
+        reports_dir=abs_path(config["reports_dir"]),
+        condition=config["disease"],
+        bucket_name=BUCKET_NAME,
+        project_id=PROJECT_ID,
+    )
+    log.info("Successfully uploaded reports to GCS bucket!!")
 
 
 def task_upload_firestore(**context):
@@ -362,9 +373,15 @@ with DAG(
         execution_timeout=timedelta(minutes=1),
     )
 
-    upload_gcs = PythonOperator(
-        task_id="task_upload_gcs",
-        python_callable=task_upload_gcs,
+    upload_raw_files_gcs = PythonOperator(
+        task_id="task_upload_raw_files_gcs",
+        python_callable=task_upload_raw_files_gcs,
+        execution_timeout=timedelta(minutes=10),
+    )
+
+    upload_reports_gcs = PythonOperator(
+        task_id="task_upload_reports_gcs",
+        python_callable=task_upload_reports_gcs,
         execution_timeout=timedelta(minutes=10),
     )
 
@@ -384,5 +401,6 @@ with DAG(
     save_reports >> check_gcp
     
     # Upload tasks only run if check_gcp returns True
-    check_gcp >> upload_gcs
+    check_gcp >> upload_raw_files_gcs
+    check_gcp >> upload_reports_gcs
     check_gcp >> upload_firestore

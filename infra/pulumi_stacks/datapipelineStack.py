@@ -22,7 +22,7 @@ class DataPipelineStack:
 
         self.dvc_bucket = gcp.storage.Bucket(
             f"{self.name}-dvc-storage",
-            name=f"dvc-storage-clinical-trials",
+            name=f"dvc-storage-clinical-trials-{self.project_id}",
             location="US",
             versioning=gcp.storage.BucketVersioningArgs(
                 enabled=True,  # Keep version history
