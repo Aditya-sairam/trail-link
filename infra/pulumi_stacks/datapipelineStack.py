@@ -12,8 +12,22 @@ class DataPipelineStack:
 
         self.pipeline_bucket = self._create_bucket()
         self.service_account = self._create_service_account()
+        self._create_artifact_registry()
+        # self.airflow_service = self._create_airflow_cloudrun_service() or None
+        # self._keep_alive_ping_for_airflow()
         self._grant_storage_access()
+        # self._make_public()
+        self.firestore_db = self._create_firestore()
         self._export_outputs()
+
+        self.dvc_bucket = gcp.storage.Bucket(
+            f"{self.name}-dvc-storage",
+            name=f"dvc-storage-clinical-trials-{self.project_id}",
+            location="US",
+            versioning=gcp.storage.BucketVersioningArgs(
+                enabled=True,  # Keep version history
+                ),
+        )
 
     def _create_bucket(self) -> gcp.storage.Bucket:
         return gcp.storage.Bucket(
@@ -32,7 +46,6 @@ class DataPipelineStack:
             display_name=f"Data Pipeline Service Account ({self.name})",
             opts=self.opts,
         )
-
     def _grant_storage_access(self):
         gcp.projects.IAMMember(
             f"{self.name}-pipeline-storage-access",
@@ -42,7 +55,92 @@ class DataPipelineStack:
             opts=pulumi.ResourceOptions(parent=self.service_account),
         )
 
+    def _create_artifact_registry(self):
+        return gcp.artifactregistry.Repository(
+            "data-pipeline-artifact-repo",
+            location=self.region,
+            repository_id=f"data-pipeline-repo-{self.name}",
+            format="DOCKER",
+            project=self.project_id,
+            opts=self.opts,
+            
+        )
+
+    ###Airflow DAGs and data pipeline infra setup
+    def _create_airflow_cloudrun_service(self):
+        return gcp.cloudrunv2.Service(
+            f"{self.name}-airflow-service",
+            location=self.region,
+            project=self.project_id,
+            ingress="INGRESS_TRAFFIC_ALL",
+            template={
+                "health_check_disabled": False,  
+                "service_account": self.service_account.email,
+                "scaling": {
+                    "min_instance_count": 0,
+                    "max_instance_count": 5,
+                },
+                "containers": [{
+                    "image": "us-central1-docker.pkg.dev/mlops-test-project-486922/data-pipeline-repo-dev/datapipeline-api:latest",
+                     "ports": {
+                        "container_port": 8081,
+                        },
+                    "resources": {
+                        "limits": {
+                            "memory": "8Gi",
+                            "cpu": "2",
+                        },
+                    },
+                     "env": [
+                        {"name": "CLINICAL_TRIALS_BUCKET", "value": self.pipeline_bucket.name},
+                        {"name": "GCP_PROJECT_ID", "value": self.project_id},
+                        {"name": "GCP_REGION", "value": self.region}
+                    ],
+                }],
+            },
+            opts=pulumi.ResourceOptions(
+                depends_on=[self.service_account],
+            ),
+        )
+    
+    def _keep_alive_ping_for_airflow(self):
+        return gcp.cloudscheduler.Job(
+            "airflow-keep-alive-ping",
+            region=self.region,
+            project= self.project_id,
+            description="Keeps the Airflow service alive by pinging it every 5 minutes",
+            schedule="*/5 * * * *",
+            time_zone="UTC",
+            http_target=gcp.cloudscheduler.JobHttpTargetArgs(
+                http_method="GET",
+                uri=pulumi.Output.concat(self.airflow_service.uri, "/health"),
+            ),
+        )
+    
+    def _create_firestore(self) -> gcp.firestore.Database:
+        return gcp.firestore.Database(
+            f"{self.name}-clinical-trials-db",
+            project = self.project_id,
+            name=f"clinical-trials-db",
+            location_id = self.region,
+            type = "FIRESTORE_NATIVE",
+            concurrency_mode = "OPTIMISTIC",
+            opts = self.opts
+        )
+
+    def _make_public(self):
+        """Make Cloud Run service publicly accessible"""
+        self.airflow_service = gcp.cloudrunv2.ServiceIamMember(
+            f"{self.name}-airflow-public-access",
+            project=self.project_id,
+            location=self.region,
+            name=self.airflow_service.name,
+            role="roles/run.invoker",
+            member="allUsers",
+            opts=pulumi.ResourceOptions(parent=self.airflow_service),
+        )
+
     def _export_outputs(self):
-        pulumi.export(f"{self.name}_pipeline_bucket", self.pipeline_bucket.name)
-        pulumi.export(f"{self.name}_pipeline_bucket_url", self.pipeline_bucket.url)
+        pulumi.export("RAW_CLINICAL_TRIALS_STORAGE", self.pipeline_bucket.name)
+        pulumi.export("CLINICAL_TRIALS_FIRESTORE", self.firestore_db.name)
         pulumi.export(f"{self.name}_pipeline_sa", self.service_account.email)
