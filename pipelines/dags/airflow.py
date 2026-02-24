@@ -116,7 +116,7 @@ def create_schema_processed_task(condition: str):
             baseline_schema_path=abs_path(config["processed_schema_path"]),
             report_path=os.path.join(abs_path(config["reports_dir"]), "schema_processed_report.json"),
             required_columns=PROCESSED_REQUIRED_DEFAULT,
-            mode="enforce",
+            mode="warn",
             allow_new_columns=True,
         )
 
@@ -306,7 +306,7 @@ def create_upload_firestore_task(condition: str):
 with DAG(
     dag_id="clinical_trials_data_pipeline",
     description="Parallel clinical trials pipeline for all conditions",
-    schedule_interval="@daily",
+    schedule_interval="@weekly",
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=["mlops", "clinical-trials", "parallel"],

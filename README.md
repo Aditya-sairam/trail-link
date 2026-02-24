@@ -60,6 +60,9 @@ docker build -t airflow-pipeline .
 ### Step 3: Run the Airflow Container
 
 ```bash
+#docker command to run the mailhog service - If any anomolies are detected, a mail will be sent to the mailhog endpoint.
+docker run -d --rm --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog
+
 docker run -d -p 8081:8081 \
   --name airflow-local \
   -v $(pwd)/data:/opt/airflow/repo/data \
@@ -108,6 +111,7 @@ http://localhost:8081
 - `quality` - Run quality checks for anomalies (short-circuits if critical issues found)
 - `stats` - Generate statistics report (total trials, distributions)
 - `anomaly` - Detect and log data anomalies
+- `notify_anomaly_email` - sends anomoly details to mailhog endpoint
 - `bias` - Analyze demographic and geographic bias
 - `save_reports` - Consolidate and save all reports locally
 - `check_gcp_config` - Verify GCP credentials and configuration (short-circuits uploads if missing)
