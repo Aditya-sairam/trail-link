@@ -12,13 +12,15 @@ The main Data Processing , fetching code is written in :
 trail-link/pipelines/
 ```
 
+The folder has a README.d with more deatils on the bias , anamolies and alerts
+
 GCP Resources are defined as infra in 
 
 ```
 trail-link/infra/datapipelineStack.py
 ```
 
-Each Folder has its own README.md file detailing its usage
+Details on how to execute the pipeline are in this ReadME.md
 
 ---
 
@@ -628,6 +630,59 @@ chmod +x deploy-to-gcp.sh
 ./deploy-to-gcp.sh
 ```
 
+---
+
+## Data Version Control (DVC)
+
+Track and version pipeline outputs using DVC. The GCS bucket for DVC storage is automatically provisioned via Pulumi.
+
+### Setup DVC
+```bash
+# Initialize DVC
+dvc init
+
+# Configure GCS remote (bucket already created by Pulumi)
+dvc remote add -d gcs gs://dvc-storage-clinical-trials-<your-project-id>
+
+# Commit DVC config
+git add .dvc .dvcignore
+git commit -m "Initialize DVC"
+```
+
+### Track Pipeline Outputs
+```bash
+# Track generated data
+dvc add data/diabetes/enriched/enriched_trials.csv
+dvc add data/diabetes/reports/
+
+dvc add data/breast_cancer/enriched/enriched_trials.csv
+dvc add data/breast_cancer/reports/
+
+# Commit DVC metadata
+git add data/**/*.dvc .gitignore
+git commit -m "Track pipeline outputs with DVC"
+
+# Push data to GCS
+dvc push
+```
+
+### Pull Data (For Team Members)
+```bash
+# Clone repo
+git clone <repo-url>
+cd trail-link
+
+# Pull data from DVC remote
+dvc pull
+```
+
+### Common Commands
+```bash
+dvc status          # Check what's changed
+dvc pull            # Download tracked data
+dvc push            # Upload tracked data
+dvc checkout        # Restore data to tracked version
+```
 ---
 
 ## Troubleshooting
