@@ -39,14 +39,13 @@ PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 FIRESTORE_DB = os.getenv("FIRESTORE_DB")
 GOOGLE_CREDS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
+# Runs automatically for BOTH diseases, in parallel, every schedule run
+CONDITIONS = ["diabetes", "breast_cancer"]
+
 log = logging.getLogger(__name__)
 
 
-def get_config(context: dict) -> dict:
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    condition = conf.get("condition", "diabetes")
-
+def get_config_for(condition: str) -> dict:
     if condition not in REGISTRY:
         raise ValueError(f"Unknown condition: '{condition}'. Available: {list(REGISTRY.keys())}")
     return REGISTRY[condition]
@@ -103,13 +102,15 @@ def task_check_gcp_config(**context) -> bool:
     return check_gcp_config()
 
 
-def task_check_updates(**context) -> bool:
+def task_check_updates(*, condition: str, **context) -> bool:
     """
     Short-circuit: returns False if no new updates are available.
     Stores the latest api update date in XCom for later use.
+
+    If Firestore is not configured, we still proceed (local run),
+    and we will not attempt watermark comparisons.
     """
-    config = get_config(context)
-    condition = config["disease"]
+    config = get_config_for(condition)
 
     latest_api_update = get_latest_update_date(
         condition_query=config["query"],
@@ -120,7 +121,11 @@ def task_check_updates(**context) -> bool:
     context["ti"].xcom_push(key="latest_api_update", value=latest_api_update)
 
     if not latest_api_update:
-        log.info("No latest update date found from API. Proceeding with pipeline.")
+        log.info(f"[{condition}] No latest update date found from API. Proceeding with pipeline.")
+        return True
+
+    if not PROJECT_ID or not FIRESTORE_DB:
+        log.info(f"[{condition}] Firestore not configured. Proceeding with pipeline (no watermark check).")
         return True
 
     last_watermark = get_pipeline_watermark(
@@ -130,44 +135,38 @@ def task_check_updates(**context) -> bool:
     )
 
     if not last_watermark:
-        log.info(f"No watermark found for condition={condition}. Proceeding with pipeline.")
+        log.info(f"[{condition}] No watermark found. Proceeding with pipeline.")
         return True
 
     latest_dt = parse_partial_date(str(latest_api_update))
     wm_dt = parse_partial_date(str(last_watermark))
 
     if not latest_dt or not wm_dt:
-        log.info("Could not parse dates reliably. Proceeding with pipeline.")
+        log.info(f"[{condition}] Could not parse dates reliably. Proceeding with pipeline.")
         return True
 
     if latest_dt > wm_dt:
-        log.info(
-            f"New updates detected for {condition}. "
-            f"latest_api_update={latest_api_update} > watermark={last_watermark}"
-        )
+        log.info(f"[{condition}] New updates detected. latest_api_update={latest_api_update} > watermark={last_watermark}")
         return True
 
-    log.info(
-        f"No new updates for {condition}. "
-        f"latest_api_update={latest_api_update} <= watermark={last_watermark}. Skipping run."
-    )
+    log.info(f"[{condition}] No new updates. latest_api_update={latest_api_update} <= watermark={last_watermark}. Skipping run.")
     return False
 
 
-def task_check_firestore_new_trials(**context) -> bool:
+def task_check_firestore_new_trials(*, condition: str, **context) -> bool:
     """
     Short-circuit:
-    - Use watermark (stored in Firestore) to fetch a bounded candidate list of updated NCT IDs from API
+    - Use watermark (stored in Firestore) to fetch candidate updated NCT IDs from API
     - Check whether each candidate exists in Firestore
-    - If ALL candidates already exist -> skip entire pipeline
+    - If ALL candidates already exist -> skip pipeline branch
     - If ANY is missing -> proceed
-    """
-    config = get_config(context)
-    condition = config["disease"]
 
-    # If Firestore is not configured, we cannot check existence, so proceed
+    If Firestore isn't configured, proceed (local run).
+    """
+    config = get_config_for(condition)
+
     if not PROJECT_ID or not FIRESTORE_DB:
-        log.info("Firestore config missing (PROJECT_ID/FIRESTORE_DB). Proceeding with pipeline.")
+        log.info(f"[{condition}] Firestore config missing (PROJECT_ID/FIRESTORE_DB). Proceeding with pipeline.")
         return True
 
     watermark = get_pipeline_watermark(
@@ -177,7 +176,7 @@ def task_check_firestore_new_trials(**context) -> bool:
     )
 
     if not watermark:
-        log.info(f"No watermark found for {condition}. Treat as first run, proceed.")
+        log.info(f"[{condition}] No watermark found. Treat as first run, proceed.")
         return True
 
     candidate_ids = get_recent_nct_ids_since(
@@ -190,7 +189,7 @@ def task_check_firestore_new_trials(**context) -> bool:
     context["ti"].xcom_push(key="candidate_nct_ids", value=candidate_ids)
 
     if not candidate_ids:
-        log.info(f"No candidate NCT IDs newer than watermark={watermark}. Skipping pipeline.")
+        log.info(f"[{condition}] No candidate NCT IDs newer than watermark={watermark}. Skipping pipeline branch.")
         return False
 
     missing = missing_nct_ids_in_firestore(
@@ -202,23 +201,23 @@ def task_check_firestore_new_trials(**context) -> bool:
     context["ti"].xcom_push(key="missing_nct_ids", value=missing)
 
     if not missing:
-        log.info(f"All {len(candidate_ids)} candidate NCT IDs already exist in Firestore. Skipping pipeline.")
+        log.info(f"[{condition}] All {len(candidate_ids)} candidate NCT IDs already exist in Firestore. Skipping branch.")
         return False
 
-    log.info(f"{len(missing)} candidate NCT IDs missing in Firestore. Proceeding with pipeline.")
+    log.info(f"[{condition}] {len(missing)} candidate NCT IDs missing in Firestore. Proceeding with branch.")
     return True
 
 
-def task_fetch_raw(**context):
-    config = get_config(context)
+def task_fetch_raw(*, condition: str, **context):
+    config = get_config_for(condition)
     download_raw_trials_csv(
         raw_file_path=abs_path(config["raw_path"]),
         condition_query=config["query"],
     )
 
 
-def task_schema_raw(**context):
-    config = get_config(context)
+def task_schema_raw(*, condition: str, **context):
+    config = get_config_for(condition)
 
     schema_dir = abs_path(config["schema_dir"])
     os.makedirs(schema_dir, exist_ok=True)
@@ -237,8 +236,8 @@ def task_schema_raw(**context):
     )
 
 
-def task_enrich(**context):
-    config = get_config(context)
+def task_enrich(*, condition: str, **context):
+    config = get_config_for(condition)
     enrich_trials_csv(
         raw_file_path=abs_path(config["raw_path"]),
         enriched_file_path=abs_path(config["enriched_path"]),
@@ -247,8 +246,8 @@ def task_enrich(**context):
     )
 
 
-def task_schema_processed(**context):
-    config = get_config(context)
+def task_schema_processed(*, condition: str, **context):
+    config = get_config_for(condition)
 
     schema_dir = abs_path(config["schema_dir"])
     os.makedirs(schema_dir, exist_ok=True)
@@ -267,13 +266,13 @@ def task_schema_processed(**context):
     )
 
 
-def task_validate(**context) -> bool:
-    config = get_config(context)
+def task_validate(*, condition: str, **context) -> bool:
+    config = get_config_for(condition)
     return run_validation(enriched_file_path=abs_path(config["enriched_path"]))
 
 
-def task_quality(**context) -> bool:
-    config = get_config(context)
+def task_quality(*, condition: str, **context) -> bool:
+    config = get_config_for(condition)
     reports_dir = abs_path(config["reports_dir"])
 
     anomalies = run_quality_checks(
@@ -285,8 +284,8 @@ def task_quality(**context) -> bool:
     return not anomalies_found(anomalies)
 
 
-def task_stats_fn(**context):
-    config = get_config(context)
+def task_stats_fn(*, condition: str, **context):
+    config = get_config_for(condition)
     reports_dir = abs_path(config["reports_dir"])
 
     stats = compute_stats(
@@ -294,15 +293,15 @@ def task_stats_fn(**context):
         stats_path=os.path.join(reports_dir, "stats.json"),
     )
 
-    log.info(f"Stats computed: total_trials={stats.get('total_trials')}")
+    log.info(f"[{condition}] Stats computed: total_trials={stats.get('total_trials')}")
     context["ti"].xcom_push(key="total_trials", value=stats.get("total_trials"))
 
 
-def task_anomaly_fn(**context):
-    config = get_config(context)
+def task_anomaly_fn(*, condition: str, **context):
+    config = get_config_for(condition)
     anomalies_path = os.path.join(abs_path(config["reports_dir"]), "anomalies.json")
 
-    log.info(f"Checking for anomalies at {anomalies_path}...")
+    log.info(f"[{condition}] Checking for anomalies at {anomalies_path}...")
     if os.path.exists(anomalies_path):
         with open(anomalies_path) as f:
             anomalies = json.load(f)
@@ -311,12 +310,12 @@ def task_anomaly_fn(**context):
         context["ti"].xcom_push(key="anomalies_found", value=None)
 
 
-def task_bias_fn(**context):
-    config = get_config(context)
+def task_bias_fn(*, condition: str, **context):
+    config = get_config_for(condition)
     reports_dir = abs_path(config["reports_dir"])
     enriched = abs_path(config["enriched_path"])
 
-    log.info(f"Generating bias report for {enriched}...")
+    log.info(f"[{condition}] Generating bias report for {enriched}...")
     if not os.path.exists(enriched):
         context["ti"].xcom_push(key="bias_level", value=None)
         return
@@ -327,15 +326,16 @@ def task_bias_fn(**context):
     context["ti"].xcom_push(key="bias_level", value=report.get("bias_level"))
 
 
-def task_save_reports(**context):
-    config = get_config(context)
+def task_save_reports(*, condition: str, **context):
+    config = get_config_for(condition)
     reports_dir = abs_path(config["reports_dir"])
     os.makedirs(reports_dir, exist_ok=True)
 
     ti = context["ti"]
+    safe = condition.replace(" ", "_").lower()
 
-    total = get_xcom(ti, "task_stats", "total_trials", default=None)
-    bias_level = get_xcom(ti, "task_bias", "bias_level", default=None)
+    total = get_xcom(ti, f"task_stats__{safe}", "total_trials", default=None)
+    bias_level = get_xcom(ti, f"task_bias__{safe}", "bias_level", default=None)
 
     stats_path = os.path.join(reports_dir, "stats.json")
     anomalies_path = os.path.join(reports_dir, "anomalies.json")
@@ -350,8 +350,8 @@ def task_save_reports(**context):
         "bias_level": bias_level,
         "gcp_uploads_enabled": check_gcp_config(),
         "firestore_diff": {
-            "candidate_nct_ids": ti.xcom_pull(task_ids="task_check_firestore_new_trials", key="candidate_nct_ids"),
-            "missing_nct_ids": ti.xcom_pull(task_ids="task_check_firestore_new_trials", key="missing_nct_ids"),
+            "candidate_nct_ids": ti.xcom_pull(task_ids=f"task_check_firestore_new_trials__{safe}", key="candidate_nct_ids"),
+            "missing_nct_ids": ti.xcom_pull(task_ids=f"task_check_firestore_new_trials__{safe}", key="missing_nct_ids"),
         },
         "reports": {
             "stats": safe_path(stats_path),
@@ -363,73 +363,74 @@ def task_save_reports(**context):
             "processed_schema_baseline": safe_path(abs_path(config["processed_schema_path"])),
         },
         "notes": {
-            "validate_short_circuit": ti.xcom_pull(task_ids="task_validate") is False,
-            "quality_short_circuit": ti.xcom_pull(task_ids="task_quality") is False,
+            "validate_short_circuit": ti.xcom_pull(task_ids=f"task_validate__{safe}") is False,
+            "quality_short_circuit": ti.xcom_pull(task_ids=f"task_quality__{safe}") is False,
         },
     }
 
     with open(os.path.join(reports_dir, "pipeline_summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
 
-    log.info(f"✓ Summary saved | condition={config['disease']} | trials={total} | bias={bias_level}")
+    log.info(f"[{condition}] ✓ Summary saved | trials={total} | bias={bias_level}")
 
 
-def task_upload_gcs(**context):
-    config = get_config(context)
-    log.info("Uploading raw data in json format to GCS bucket!!")
+def task_upload_gcs(*, condition: str, **context):
+    config = get_config_for(condition)
+    log.info(f"[{condition}] Uploading raw data in json format to GCS bucket")
     upload_raw_to_gcs(
         raw_file_path=abs_path(config["raw_path"]),
         condition=config["disease"],
         bucket_name=BUCKET_NAME,
         project_id=PROJECT_ID,
     )
-    log.info("Successfully Uploaded raw data in json format to GCS bucket!!")
+    log.info(f"[{condition}] Successfully uploaded raw data to GCS")
 
 
-def task_upload_firestore(**context):
-    config = get_config(context)
-    log.info("Uploading processed data in json format to FireStore DB!!")
+def task_upload_firestore(*, condition: str, **context):
+    config = get_config_for(condition)
+    log.info(f"[{condition}] Uploading processed data to Firestore")
     upload_enriched_to_firestore(
         enriched_file_path=abs_path(config["enriched_path"]),
         condition=config["disease"],
         project_id=PROJECT_ID,
         database=FIRESTORE_DB,
     )
-    log.info("Successfully Uploaded processed data in json format to FireStore DB!!")
+    log.info(f"[{condition}] Successfully uploaded processed data to Firestore")
 
 
-def task_update_watermark(**context):
+def task_update_watermark(*, condition: str, **context):
     """
     Update watermark at the very end of a successful run.
     Uses the latest_api_update captured at task_check_updates time.
     """
-    config = get_config(context)
-    condition = config["disease"]
+    if not PROJECT_ID or not FIRESTORE_DB:
+        log.info(f"[{condition}] Firestore not configured, skipping watermark update.")
+        return
 
     ti = context["ti"]
-    latest_api_update = ti.xcom_pull(task_ids="task_check_updates", key="latest_api_update")
+    safe = condition.replace(" ", "_").lower()
+    latest_api_update = ti.xcom_pull(task_ids=f"task_check_updates__{safe}", key="latest_api_update")
 
-    if latest_api_update and PROJECT_ID and FIRESTORE_DB:
+    if latest_api_update:
         set_pipeline_watermark(
             project_id=PROJECT_ID,
             database=FIRESTORE_DB,
             condition=condition,
             last_successful_update=str(latest_api_update),
         )
-        log.info(f"Watermark updated for {condition} to {latest_api_update}")
+        log.info(f"[{condition}] Watermark updated to {latest_api_update}")
         return
 
-    log.warning("No latest_api_update found in XCom or Firestore not configured, watermark not updated.")
+    log.warning(f"[{condition}] No latest_api_update found in XCom, watermark not updated.")
 
 
 with DAG(
     dag_id="clinical_trials_data_pipeline",
-    description="Generalised clinical trials pipeline, pass condition via params",
+    description="Clinical trials pipeline for multiple conditions (auto, parallel)",
     schedule_interval="@daily",
     start_date=datetime(2025, 1, 1),
     catchup=False,
-    params={"condition": "breast_cancer"},
-    tags=["mlops", "clinical-trials", "generalised"],
+    tags=["mlops", "clinical-trials", "multi-condition"],
     default_args={
         "owner": "sanika",
         "retries": 1,
@@ -438,127 +439,138 @@ with DAG(
     },
 ) as dag:
 
-    # 0) API watermark check
-    check_updates = ShortCircuitOperator(
-        task_id="task_check_updates",
-        python_callable=task_check_updates,
-        execution_timeout=timedelta(minutes=5),
-        ignore_downstream_trigger_rules=False,
-    )
-
-    # 0.5) Firestore existence check for "new" candidate trials
-    check_firestore_new = ShortCircuitOperator(
-        task_id="task_check_firestore_new_trials",
-        python_callable=task_check_firestore_new_trials,
-        execution_timeout=timedelta(minutes=5),
-        ignore_downstream_trigger_rules=False,
-    )
-
-    # 1) Main processing
-    fetch_raw = PythonOperator(
-        task_id="task_fetch_raw",
-        python_callable=task_fetch_raw,
-        execution_timeout=timedelta(minutes=30),
-    )
-
-    schema_raw = PythonOperator(
-        task_id="task_schema_raw",
-        python_callable=task_schema_raw,
-        execution_timeout=timedelta(minutes=5),
-    )
-
-    enrich = PythonOperator(
-        task_id="task_enrich",
-        python_callable=task_enrich,
-        execution_timeout=timedelta(minutes=5),
-    )
-
-    schema_processed = PythonOperator(
-        task_id="task_schema_processed",
-        python_callable=task_schema_processed,
-        execution_timeout=timedelta(minutes=5),
-    )
-
-    validate = ShortCircuitOperator(
-        task_id="task_validate",
-        python_callable=task_validate,
-        execution_timeout=timedelta(minutes=5),
-        ignore_downstream_trigger_rules=False,
-    )
-
-    quality = ShortCircuitOperator(
-        task_id="task_quality",
-        python_callable=task_quality,
-        execution_timeout=timedelta(minutes=10),
-        ignore_downstream_trigger_rules=False,
-    )
-
-    # 2) Analysis tasks
-    stats = PythonOperator(
-        task_id="task_stats",
-        python_callable=task_stats_fn,
-        execution_timeout=timedelta(minutes=5),
-        trigger_rule="all_done",
-    )
-
-    anomaly = PythonOperator(
-        task_id="task_anomaly",
-        python_callable=task_anomaly_fn,
-        execution_timeout=timedelta(minutes=5),
-        trigger_rule="all_done",
-    )
-
-    bias = PythonOperator(
-        task_id="task_bias",
-        python_callable=task_bias_fn,
-        execution_timeout=timedelta(minutes=5),
-        trigger_rule="all_done",
-    )
-
-    save_reports = PythonOperator(
-        task_id="task_save_reports",
-        python_callable=task_save_reports,
-        execution_timeout=timedelta(minutes=5),
-        trigger_rule="all_done",
-    )
-
-    # 3) Upload gate
+    # One shared gate for uploads. Branches will still run locally even if this is False.
     check_gcp = ShortCircuitOperator(
         task_id="task_check_gcp_config",
         python_callable=task_check_gcp_config,
         execution_timeout=timedelta(minutes=1),
     )
 
-    # 4) Upload tasks
-    upload_gcs = PythonOperator(
-        task_id="task_upload_gcs",
-        python_callable=task_upload_gcs,
-        execution_timeout=timedelta(minutes=10),
-    )
+    # Build two parallel disease branches
+    for condition in CONDITIONS:
+        safe = condition.replace(" ", "_").lower()
 
-    upload_firestore = PythonOperator(
-        task_id="task_upload_firestore",
-        python_callable=task_upload_firestore,
-        execution_timeout=timedelta(minutes=15),
-    )
+        check_updates = ShortCircuitOperator(
+            task_id=f"task_check_updates__{safe}",
+            python_callable=task_check_updates,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            ignore_downstream_trigger_rules=False,
+        )
 
-    # 5) Update watermark at the end
-    update_watermark = PythonOperator(
-        task_id="task_update_watermark",
-        python_callable=task_update_watermark,
-        execution_timeout=timedelta(minutes=2),
-        trigger_rule="all_success",
-    )
+        check_firestore_new = ShortCircuitOperator(
+            task_id=f"task_check_firestore_new_trials__{safe}",
+            python_callable=task_check_firestore_new_trials,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            ignore_downstream_trigger_rules=False,
+        )
 
-    # ---------------- DAG wiring ----------------
-    check_updates >> check_firestore_new >> fetch_raw
-    fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality
+        fetch_raw = PythonOperator(
+            task_id=f"task_fetch_raw__{safe}",
+            python_callable=task_fetch_raw,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=30),
+        )
 
-    quality >> [stats, anomaly, bias]
-    [stats, anomaly, bias] >> save_reports
+        schema_raw = PythonOperator(
+            task_id=f"task_schema_raw__{safe}",
+            python_callable=task_schema_raw,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+        )
 
-    save_reports >> check_gcp
-    check_gcp >> upload_gcs
-    check_gcp >> upload_firestore
+        enrich = PythonOperator(
+            task_id=f"task_enrich__{safe}",
+            python_callable=task_enrich,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+        )
 
-    [upload_gcs, upload_firestore] >> update_watermark
+        schema_processed = PythonOperator(
+            task_id=f"task_schema_processed__{safe}",
+            python_callable=task_schema_processed,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+        )
+
+        validate = ShortCircuitOperator(
+            task_id=f"task_validate__{safe}",
+            python_callable=task_validate,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            ignore_downstream_trigger_rules=False,
+        )
+
+        quality = ShortCircuitOperator(
+            task_id=f"task_quality__{safe}",
+            python_callable=task_quality,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=10),
+            ignore_downstream_trigger_rules=False,
+        )
+
+        stats = PythonOperator(
+            task_id=f"task_stats__{safe}",
+            python_callable=task_stats_fn,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            trigger_rule="all_done",
+        )
+
+        anomaly = PythonOperator(
+            task_id=f"task_anomaly__{safe}",
+            python_callable=task_anomaly_fn,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            trigger_rule="all_done",
+        )
+
+        bias = PythonOperator(
+            task_id=f"task_bias__{safe}",
+            python_callable=task_bias_fn,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            trigger_rule="all_done",
+        )
+
+        save_reports = PythonOperator(
+            task_id=f"task_save_reports__{safe}",
+            python_callable=task_save_reports,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=5),
+            trigger_rule="all_done",
+        )
+
+        upload_gcs = PythonOperator(
+            task_id=f"task_upload_gcs__{safe}",
+            python_callable=task_upload_gcs,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=10),
+        )
+
+        upload_firestore = PythonOperator(
+            task_id=f"task_upload_firestore__{safe}",
+            python_callable=task_upload_firestore,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=15),
+        )
+
+        update_watermark = PythonOperator(
+            task_id=f"task_update_watermark__{safe}",
+            python_callable=task_update_watermark,
+            op_kwargs={"condition": condition},
+            execution_timeout=timedelta(minutes=2),
+            trigger_rule="all_success",
+        )
+
+        # Wiring for this condition branch
+        check_updates >> check_firestore_new >> fetch_raw
+        fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality
+
+        quality >> [stats, anomaly, bias]
+        [stats, anomaly, bias] >> save_reports
+
+        # Upload gate + watermark per condition
+        save_reports >> check_gcp
+        check_gcp >> [upload_gcs, upload_firestore] >> update_watermark

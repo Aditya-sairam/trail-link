@@ -7,12 +7,14 @@ from __future__ import annotations
 import os
 import time
 import logging
-import requests
-import pandas as pd
+from datetime import datetime
 from typing import Callable, Optional, List
 
+import requests
+import pandas as pd
 
 log = logging.getLogger(__name__)
+
 
 def _parse_partial_date(date_str: str) -> Optional[datetime]:
     """
@@ -60,8 +62,8 @@ def get_latest_update_date(
         return None
 
     studies = data.get("studies", [])
-    best_dt = None
-    best_raw = None
+    best_dt: Optional[datetime] = None
+    best_raw: Optional[str] = None
 
     for s in studies:
         try:
@@ -83,75 +85,92 @@ def get_latest_update_date(
 
 def extract_study(study: dict) -> dict:
     """Flatten a single study JSON into a flat dict with 32 fields."""
-    proto    = study.get("protocolSection", {})
-    ident    = proto.get("identificationModule", {})
-    status   = proto.get("statusModule", {})
-    desc     = proto.get("descriptionModule", {})
-    design   = proto.get("designModule", {})
-    elig     = proto.get("eligibilityModule", {})
-    sponsor  = proto.get("sponsorCollaboratorsModule", {})
+    proto = study.get("protocolSection", {})
+    ident = proto.get("identificationModule", {})
+    status = proto.get("statusModule", {})
+    desc = proto.get("descriptionModule", {})
+    design = proto.get("designModule", {})
+    elig = proto.get("eligibilityModule", {})
+    sponsor = proto.get("sponsorCollaboratorsModule", {})
     contacts = proto.get("contactsLocationsModule", {})
-    arms     = proto.get("armsInterventionsModule", {})
-    conds    = proto.get("conditionsModule", {})
+    arms = proto.get("armsInterventionsModule", {})
+    conds = proto.get("conditionsModule", {})
 
-    interventions      = arms.get("interventions", [])
-    intervention_names = "; ".join(i.get("name", "") for i in interventions if isinstance(i, dict))
-    intervention_types = "; ".join(i.get("type", "") for i in interventions if isinstance(i, dict))
+    interventions = arms.get("interventions", [])
+    intervention_names = "; ".join(
+        i.get("name", "") for i in interventions if isinstance(i, dict)
+    )
+    intervention_types = "; ".join(
+        i.get("type", "") for i in interventions if isinstance(i, dict)
+    )
 
     locations = contacts.get("locations", [])
-    countries = list(set(
-        loc.get("country", "") for loc in locations
-        if isinstance(loc, dict) and loc.get("country")
-    ))
-    cities = list(set(
-        loc.get("city", "") for loc in locations
-        if isinstance(loc, dict) and loc.get("city")
-    ))
+    countries = list(
+        set(
+            loc.get("country", "")
+            for loc in locations
+            if isinstance(loc, dict) and loc.get("country")
+        )
+    )
+    cities = list(
+        set(
+            loc.get("city", "")
+            for loc in locations
+            if isinstance(loc, dict) and loc.get("city")
+        )
+    )
 
     lead_sponsor = sponsor.get("leadSponsor", {})
-    collabs      = sponsor.get("collaborators", [])
+    collabs = sponsor.get("collaborators", [])
     collab_names = "; ".join(c.get("name", "") for c in collabs if isinstance(c, dict))
-    design_info  = design.get("designInfo", {})
+
+    design_info = design.get("designInfo", {})
     masking_info = design_info.get("maskingInfo", {})
-    phases       = design.get("phases", [])
-    start             = status.get("startDateStruct", {})
-    completion        = status.get("completionDateStruct", {})
+    phases = design.get("phases", [])
+
+    start = status.get("startDateStruct", {})
+    completion = status.get("completionDateStruct", {})
     primary_completion = status.get("primaryCompletionDateStruct", {})
 
+    enrollment_info = design.get("enrollmentInfo", {})
+    enrollment_count = (
+        enrollment_info.get("count", "") if isinstance(enrollment_info, dict) else ""
+    )
+
     return {
-        "NCT Number":                 ident.get("nctId", ""),
-        "Title":                      ident.get("officialTitle", ""),
-        "Study Title":                ident.get("briefTitle", ""),
-        "Recruitment Status":         status.get("overallStatus", ""),
-        "Study Type":                 design.get("studyType", ""),
-        "Phase":                      "; ".join(phases) if phases else "",
-        "Enrollment":                 design.get("enrollmentInfo", {}).get("count", "") if isinstance(design.get("enrollmentInfo"), dict) else "",
-        "Start Date":                 start.get("date", ""),
-        "Completion Date":            completion.get("date", ""),
-        "Primary Completion Date":    primary_completion.get("date", ""),
-        "Last Update":                status.get("lastUpdateSubmitDate", ""),
-        "Brief Summary":              desc.get("briefSummary", ""),
-        "Detailed Description":       desc.get("detailedDescription", ""),
-        "Conditions":                 "; ".join(c for c in conds.get("conditions", []) if isinstance(c, str)),
-        "Keywords":                   "; ".join(conds.get("keywords", [])),
-        "Allocation":                 design_info.get("allocation", ""),
-        "Intervention Model":         design_info.get("interventionModel", ""),
-        "Primary Purpose":            design_info.get("primaryPurpose", ""),
-        "Masking":                    masking_info.get("masking", ""),
-        "Interventions":              intervention_names,
-        "Intervention Types":         intervention_types,
-        "Eligibility Criteria":       elig.get("eligibilityCriteria", ""),
-        "Min Age":                    elig.get("minimumAge", ""),
-        "Max Age":                    elig.get("maximumAge", ""),
-        "Sex":                        elig.get("sex", ""),
+        "NCT Number": ident.get("nctId", ""),
+        "Title": ident.get("officialTitle", ""),
+        "Study Title": ident.get("briefTitle", ""),
+        "Recruitment Status": status.get("overallStatus", ""),
+        "Study Type": design.get("studyType", ""),
+        "Phase": "; ".join(phases) if phases else "",
+        "Enrollment": enrollment_count,
+        "Start Date": start.get("date", ""),
+        "Completion Date": completion.get("date", ""),
+        "Primary Completion Date": primary_completion.get("date", ""),
+        "Last Update": status.get("lastUpdateSubmitDate", ""),
+        "Brief Summary": desc.get("briefSummary", ""),
+        "Detailed Description": desc.get("detailedDescription", ""),
+        "Conditions": "; ".join(c for c in conds.get("conditions", []) if isinstance(c, str)),
+        "Keywords": "; ".join(conds.get("keywords", [])),
+        "Allocation": design_info.get("allocation", ""),
+        "Intervention Model": design_info.get("interventionModel", ""),
+        "Primary Purpose": design_info.get("primaryPurpose", ""),
+        "Masking": masking_info.get("masking", ""),
+        "Interventions": intervention_names,
+        "Intervention Types": intervention_types,
+        "Eligibility Criteria": elig.get("eligibilityCriteria", ""),
+        "Min Age": elig.get("minimumAge", ""),
+        "Max Age": elig.get("maximumAge", ""),
+        "Sex": elig.get("sex", ""),
         "Accepts Healthy Volunteers": elig.get("healthyVolunteers", ""),
-        "Location Countries":         "; ".join(countries),
-        "Location Cities":            "; ".join(cities),
-        "Number of Locations":        len(locations),
-        "Sponsor":                    lead_sponsor.get("name", "") if isinstance(lead_sponsor, dict) else "",
-        "Sponsor Class":              lead_sponsor.get("class", "") if isinstance(lead_sponsor, dict) else "",
-        "Collaborators":              collab_names,
-        "Study URL":                  f"https://clinicaltrials.gov/study/{ident.get('nctId', '')}",
+        "Location Countries": "; ".join(countries),
+        "Location Cities": "; ".join(cities),
+        "Number of Locations": len(locations),
+        "Sponsor": lead_sponsor.get("name", "") if isinstance(lead_sponsor, dict) else "",
+        "Sponsor Class": lead_sponsor.get("class", "") if isinstance(lead_sponsor, dict) else "",
+        "Collaborators": collab_names,
+        "Study URL": f"https://clinicaltrials.gov/study/{ident.get('nctId', '')}",
     }
 
 
@@ -165,17 +184,17 @@ def download_raw_trials_csv(
     """Download all trials for a condition. Single broad query with pagination."""
     os.makedirs(os.path.dirname(raw_file_path), exist_ok=True)
 
-    url    = "https://clinicaltrials.gov/api/v2/studies"
+    url = "https://clinicaltrials.gov/api/v2/studies"
     params = {
-        "query.cond":           condition_query,
+        "query.cond": condition_query,
         "filter.overallStatus": status,
-        "pageSize":             page_size,
-        "format":               "json",
+        "pageSize": page_size,
+        "format": "json",
     }
 
-    all_trials      = []
-    next_page_token = None
-    page_num        = 0
+    all_trials: List[dict] = []
+    next_page_token: Optional[str] = None
+    page_num = 0
 
     log.info(f"Fetching '{condition_query}' trials...")
 
@@ -191,7 +210,7 @@ def download_raw_trials_csv(
             log.error(f"Request failed on page {page_num}: {e}")
             break
 
-        studies  = data.get("studies", [])
+        studies = data.get("studies", [])
         page_num += 1
         log.info(f"  Page {page_num}: {len(studies)} trials (total: {len(all_trials) + len(studies)})")
 
@@ -224,12 +243,12 @@ def enrich_trials_csv(
     """Add disease and disease_type columns. Deduplicates by NCT Number."""
     os.makedirs(os.path.dirname(enriched_file_path), exist_ok=True)
 
-    df     = pd.read_csv(raw_file_path)
+    df = pd.read_csv(raw_file_path)
     before = len(df)
-    df     = df.drop_duplicates(subset=["NCT Number"], keep="first")
+    df = df.drop_duplicates(subset=["NCT Number"], keep="first")
     log.info(f"Deduplication: {before:,} → {len(df):,} rows")
 
-    df["disease"]      = disease
+    df["disease"] = disease
     df["disease_type"] = df["Conditions"].apply(classifier)
 
     df.to_csv(enriched_file_path, index=False)
@@ -238,6 +257,7 @@ def enrich_trials_csv(
         log.info(f"  {dtype:40} {count:,}")
 
     return df
+
 
 def get_recent_nct_ids_since(
     *,
@@ -255,8 +275,6 @@ def get_recent_nct_ids_since(
     - Query API sorted by last update descending.
     - As soon as we see lastUpdateSubmitDate <= since_date, stop scanning.
     - Return collected NCT IDs (up to max_ids).
-
-    This gives us a "candidate set" to check against Firestore.
     """
     url = "https://clinicaltrials.gov/api/v2/studies"
 
@@ -265,9 +283,6 @@ def get_recent_nct_ids_since(
         "filter.overallStatus": status,
         "pageSize": page_size,
         "format": "json",
-        # If your API accepts this, it is ideal.
-        # If your repo already uses a different sort key in get_latest_update_date,
-        # replace this with the same one you know works.
         "sort": "LastUpdateSubmitDate:desc",
     }
 
@@ -298,7 +313,6 @@ def get_recent_nct_ids_since(
             nct = ident.get("nctId")
             last_update = status_mod.get("lastUpdateSubmitDate")
 
-            # If the API is sorted newest first, we can stop early
             if last_update and since_date and str(last_update) <= str(since_date):
                 return out
 
