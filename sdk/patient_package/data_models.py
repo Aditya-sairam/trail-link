@@ -23,8 +23,8 @@ class ConditionStatus(str, Enum):
 class Demographics(BaseModel):
     """Patient demographic information"""
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    
     patient_id: str = Field(..., description="Unique patient identifier")
+    firebase_uid: Optional[str] = Field(...,description="Unique firebase id to associate with login creds")
     date_of_birth: date_type = Field(..., description="Patient's date of birth")
     age: int = Field(..., description="Current age in years")
     gender: Gender
