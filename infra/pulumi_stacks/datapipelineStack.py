@@ -109,7 +109,7 @@ class DataPipelineStack:
             region=self.region,
             project= self.project_id,
             description="Keeps the Airflow service alive by pinging it every 5 minutes",
-            schedule="*/5 * * * *",
+            schedule="50 23 * * 6",
             time_zone="UTC",
             http_target=gcp.cloudscheduler.JobHttpTargetArgs(
                 http_method="GET",

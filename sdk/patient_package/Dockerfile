@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 ENV GCP_PROJECT_ID=mlops-test-project-486922
 ENV FIRESTORE_DATABASE=patient-db-dev
+ENV FIREBASE_PROJECT_ID=patients-authentication
 ENV ENVIRONMENT=development
 
 WORKDIR /app 
