@@ -57,6 +57,13 @@ class PatientStack:
             member=pulumi.Output.concat("serviceAccount:", self.service_account.email),
             opts=pulumi.ResourceOptions(parent=self.service_account),
         )
+        gcp.projects.IAMMember(
+            f"{self.name}-api-vertex-ai-access",
+            project=self.project_id,
+            role="roles/aiplatform.user",
+            member=pulumi.Output.concat("serviceAccount:", self.service_account.email),
+            opts=pulumi.ResourceOptions(parent=self.service_account),
+        )
 
     def _create_cloud_run(self):
         return gcp.cloudrunv2.Service(
