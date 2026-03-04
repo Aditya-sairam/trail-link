@@ -10,6 +10,7 @@ from google.cloud import firestore
 from auth import verify_token, require_admin, require_patient_or_admin
 import os
 import logging
+from embeddinngs import get_patient_embedding
 
 # ── Logging setup — makes logs visible in Cloud Run console ──
 logging.basicConfig(
@@ -51,30 +52,21 @@ logger = logging.getLogger(__name__)
 
 @app.post("/patients/create", response_model=Patient, status_code=status.HTTP_201_CREATED)
 async def create_patient(
-    request: Request,
+    patient: Patient,                              # ← should be Patient, not Request
     token: dict = Depends(require_patient_or_admin)
 ):
-    
-    # Log raw payload before Pydantic touches it
-    raw_body = await request.json()
-    logger.info(f"POST /patients/create — raw payload received")
-    # logger.info("The raw payload is\t",**raw_body)
-    # Stamp patient_id and firebase_uid BEFORE Pydantic validation
-    raw_body["demographics"]["patient_id"] = generate_patient_id()
-    raw_body["demographics"]["firebase_uid"] = token["uid"]
-    logger.info(f"Stamped patient_id: {raw_body['demographics']['patient_id']}, uid: {raw_body['demographics']['firebase_uid']}")
-    
-    
-    try:
-        patient = Patient(**raw_body)
-    except Exception as e:
-        logger.error(f"Pydantic validation error FULL: {repr(e)}")
-        raise HTTPException(status_code=422, detail=str(e))
+    patient.demographics.patient_id = generate_patient_id()
+    patient.demographics.firebase_uid = token["uid"]
+    logger.info(f"Creating patient — id: {patient.demographics.patient_id}, uid: {token['uid']}")
 
-    logger.info(f"Pydantic validation passed — saving to Firestore")
-    doc_ref = get_db().collection(PATIENTS_COLLECTION).document(patient.demographics.patient_id)
-    doc_ref.set(patient.model_dump(mode='json'))
-    logger.info(f"Patient saved successfully")
+    try:
+        doc_ref = get_db().collection(PATIENTS_COLLECTION).document(patient.demographics.patient_id)
+        doc_ref.set(patient.model_dump(mode='json'))
+        logger.info("Patient saved successfully")
+    except Exception as e:
+        logger.error(f"Firestore save error: {repr(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
     return patient
 
 
@@ -157,6 +149,24 @@ async def get_my_profile(token: dict = Depends(require_patient_or_admin)):
 
     for doc in docs:
         return Patient(**doc.to_dict())
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
+
+@app.get("/me/trial-suggestions", response_model=dict)
+async def get_trial_suggestions(token: dict = Depends(require_patient_or_admin)):
+    """Patient calls this to find their own profile by firebase_uid"""
+    docs = get_db().collection(PATIENTS_COLLECTION)\
+        .where("demographics.firebase_uid", "==", token["uid"])\
+        .limit(1).stream()
+
+    for doc in docs:
+        text_summary =  Patient(**doc.to_dict()).to_text_summary()
+        embeddings = get_patient_embedding(text_summary)
+        return {
+            "summary":text_summary,
+            "embeddings":embeddings,
+            "embedding_dimensions": len(embeddings)
+        }
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
 

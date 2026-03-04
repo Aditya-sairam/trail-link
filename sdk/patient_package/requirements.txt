@@ -17,3 +17,4 @@ typing_extensions==4.15.0
 uvicorn==0.40.0
 google-cloud-firestore
 firebase_admin
+vertexai==1.71.1
