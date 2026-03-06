@@ -27,7 +27,9 @@ Details on how to execute the pipeline are in this ReadME.md
 ## Table of Contents
 - [Running Locally](#running-locally)
 - [Running on Google Cloud](#running-on-google-cloud)
+- [Unit Tests](#unit-tests)
 - [Project Structure](#project-structure)
+  
 
 ---
 
@@ -686,6 +688,38 @@ dvc status          # Check what's changed
 dvc pull            # Download tracked data
 dvc push            # Upload tracked data
 dvc checkout        # Restore data to tracked version
+```
+---
+## Unit Tests
+
+Unit tests are written using **pytest** to validate each component of the data pipeline.
+
+### Test Files
+
+| File | Component Tested |
+|---|---|
+| `tests/test_ingest.py` | Data fetching, field extraction, enrichment |
+| `tests/test_quality.py` | Text cleaning, anomaly detection, quality checks |
+| `tests/test_schema.py` | Schema generation, type drift, validation rules |
+| `tests/test_bias.py` | Sex/geographic/age bias detection, scoring |
+| `tests/test_validate.py` | Row count, NCT format, critical null checks |
+| `tests/test_stats.py` | Enrollment stats, sponsor ranking, geography |
+
+### What's Tested
+
+- **Field extraction** — all 32 fields from ClinicalTrials.gov API, missing/malformed keys
+- **Text cleaning** — HTML entities, invalid characters, medical abbreviations (T1DM → Type 1 Diabetes Mellitus), whitespace
+- **Anomaly detection** — duplicate NCT numbers, high missing columns, enrollment outliers, invalid NCT format
+- **Schema validation** — type drift, null thresholds, categorical limits, enforce vs warn modes
+- **Bias detection** — sex imbalance ratio, US geographic concentration (>80%), low pediatric representation (<5%), bias scoring (LOW/MEDIUM/HIGH)
+- **Validation gates** — empty datasets, missing required columns, disease_type unknown rate
+- **Statistics** — enrollment aggregates, top sponsors, country distribution
+
+### Running Tests
+```bash
+# From repo root
+pip install pytest pandas
+pytest tests/ -v
 ```
 ---
 
