@@ -13,10 +13,10 @@ class DataPipelineStack:
         self.pipeline_bucket = self._create_bucket()
         self.service_account = self._create_service_account()
         self._create_artifact_registry()
-        # self.airflow_service = self._create_airflow_cloudrun_service() or None
-        # self._keep_alive_ping_for_airflow()
+        self.airflow_service = self._create_airflow_cloudrun_service() or None
+        self._keep_alive_ping_for_airflow()
         self._grant_storage_access()
-        # self._make_public()
+        self._make_public()
         self.firestore_db = self._create_firestore()
         self._export_outputs()
 
@@ -109,7 +109,7 @@ class DataPipelineStack:
             region=self.region,
             project= self.project_id,
             description="Keeps the Airflow service alive by pinging it every 5 minutes",
-            schedule="*/5 * * * *",
+            schedule="50 23 * * 6",
             time_zone="UTC",
             http_target=gcp.cloudscheduler.JobHttpTargetArgs(
                 http_method="GET",
