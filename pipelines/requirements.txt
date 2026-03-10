@@ -148,3 +148,6 @@ voluptuous==0.16.0
 wcwidth==0.6.0
 yarl==1.22.0
 zc.lockfile==4.0
+# Add these two lines to your existing requirements.txt
+google-cloud-aiplatform>=1.38.0
+vertexai>=1.38.0
