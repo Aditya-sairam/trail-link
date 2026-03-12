@@ -10,7 +10,7 @@ from google.cloud import firestore
 from auth import verify_token, require_admin, require_patient_or_admin
 import os
 import logging
-from embeddinngs import get_patient_embedding
+from embeddinngs import get_patient_embedding, query_vector_search
 
 # ── Logging setup — makes logs visible in Cloud Run console ──
 logging.basicConfig(
@@ -152,20 +152,20 @@ async def get_my_profile(token: dict = Depends(require_patient_or_admin)):
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
 
-@app.get("/me/trial-suggestions", response_model=dict)
+@app.get("/me/trial-suggestions")
 async def get_trial_suggestions(token: dict = Depends(require_patient_or_admin)):
-    """Patient calls this to find their own profile by firebase_uid"""
     docs = get_db().collection(PATIENTS_COLLECTION)\
         .where("demographics.firebase_uid", "==", token["uid"])\
         .limit(1).stream()
 
     for doc in docs:
-        text_summary =  Patient(**doc.to_dict()).to_text_summary()
-        embeddings = get_patient_embedding(text_summary)
+        text_summary = Patient(**doc.to_dict()).to_text_summary()
+        embedding = get_patient_embedding(text_summary)
+        trial_ids = query_vector_search(embedding)
         return {
-            "summary":text_summary,
-            "embeddings":embeddings,
-            "embedding_dimensions": len(embeddings)
+            "summary": text_summary,
+            "matched_trials": trial_ids,        # ← list of NCT IDs
+            "total_matches": len(trial_ids)
         }
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")

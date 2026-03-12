@@ -95,6 +95,7 @@ class PatientStack:
                         {"name": "GCP_REGION", "value": self.region},
                         {"name": "FIRESTORE_DATABASE", "value": self.firestore_db.name},
                         {"name": "FIREBASE_PROJECT_ID", "value": "patients-authentication"},
+                        {"name":"VECTOR_SEARCH_ENDPOINT_ID","value":"1573491299300933632"},
                     ],
                 }],
             },

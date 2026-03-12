@@ -87,7 +87,7 @@ def upload_enriched_to_firestore(
         # Add metadata fields
         clean_row["condition"] = condition
         clean_row["pipeline_run_date"] = run_date
-
+        clean_row["embedded"] = False
         # Extract NCT ID (now in snake_case)
         nct_id = (
             clean_row.get("nct_number")
