@@ -49,7 +49,8 @@ CONDITIONS      = ["diabetes", "breast_cancer"]
 # 200 char overlap ensures context continuity between chunks
 CHUNK_SIZE      = 1200
 CHUNK_OVERLAP   = 200
-
+MAX_TOKENS_PER_CALL = 18000  # stay safely under 20k limit
+CHARS_PER_TOKEN     = 1.4    # conservative estimate (more chars per token = smaller batches)
 
 # ── Build full text from a Firestore trial doc ────────────────────────────────
 
@@ -133,9 +134,6 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
     vertexai.init(project=PROJECT_ID, location=REGION)
     model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL)
-
-    MAX_TOKENS_PER_CALL = 18000  # stay safely under 20k limit
-    CHARS_PER_TOKEN     = 1.4    # conservative estimate (more chars per token = smaller batches)
 
     all_vectors = []
     sub_batch   = []

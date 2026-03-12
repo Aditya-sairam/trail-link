@@ -2,6 +2,16 @@ import logging
 from vertexai.language_models import TextEmbeddingModel, TextEmbeddingInput
 import vertexai
 import os
+from google.cloud import aiplatform
+import numpy as np
+
+GCP_PROJECT_ID  = os.getenv("GCP_PROJECT_ID")
+FIRESTORE_DB    = os.getenv("FIRESTORE_DB", "patient-db-sai")
+EMBEDDING_MODEL = "text-embedding-005"
+LLM_MODEL       = "gemini-2.0-flash"
+RETRIEVAL_TOP_K = 20   # candidates retrieved from vector search (broad net)
+RERANK_TOP_K    = 5    # final trials kept after reranking
+CONDITIONS      = ["diabetes", "breast_cancer"]  # matches Firestore collection suffixes
 
 logger = logging.getLogger(__name__)
 
@@ -38,3 +48,40 @@ def get_patient_embedding(text_summary: str) -> list[float]:
     except Exception as e:
         logger.error(f"Failed to generate embedding: {str(e)}")
         raise
+
+def query_vector_search(
+    patient_embedding: list[float],
+    top_k: int = RETRIEVAL_TOP_K,
+) -> list[str]:
+    
+    aiplatform.init(
+        project=GCP_PROJECT_ID,
+        location=os.getenv("GCP_REGION","us-central1")
+    )
+    index_endpoint = aiplatform.MatchingEngineIndexEndpoint(index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOINT_ID"))
+    fetch_k = top_k*3
+    query = np.array(patient_embedding)
+    
+    logger.info("Querying Vertx AI vector search..")
+    
+    results = index_endpoint.find_neighbors(
+        deployed_index_id="clinical_trials_dev",
+        queries=[patient_embedding],
+        num_neighbors=fetch_k
+    )
+    
+    matches = results[0]
+    
+    seen_nct_ids = {}
+    for match in matches:
+        nct_id = match.id.rsplit("_",1)[0]
+        score = match.distance
+        if nct_id and  nct_id not in seen_nct_ids or score < seen_nct_ids[nct_id]:
+            seen_nct_ids[nct_id] = score 
+    
+    sorted_trials = sorted(seen_nct_ids.items(),key=lambda x:x[1])
+    top_nct_ids = [nct_id for nct_id,_ in sorted_trials[:top_k]]
+
+    logger.info(f"Vector search retrieved top {top_k}: {top_nct_ids}")
+    return top_nct_ids
+
