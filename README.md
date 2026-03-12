@@ -482,7 +482,7 @@ cd ../../pipelines
 docker build -t airflow-pipeline .
 
 # Run Airflow with GCP credentials and configuration
-docker run -d -p 8081:8081 \
+docker run  -p 8081:8081 \
   --name airflow-gcp \
   -e RAW_CLINICAL_TRIALS_STORAGE=$BUCKET_NAME \
   -e GCP_PROJECT_ID=$PROJECT_ID \
