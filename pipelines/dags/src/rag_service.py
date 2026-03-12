@@ -402,23 +402,23 @@ def generate_recommendation(
     ])
 
     prompt = f"""
-You are a clinical trial matching assistant for TrialLink, an MLOps platform
-that connects patients with relevant clinical trials.
+        You are a clinical trial matching assistant for TrialLink, an MLOps platform
+        that connects patients with relevant clinical trials.
 
-Patient Profile:
-{patient_summary}
+        Patient Profile:
+        {patient_summary}
 
-Top Matching Clinical Trials (reranked by relevance):
-{context}
+        Top Matching Clinical Trials (reranked by relevance):
+        {context}
 
-Task:
-Recommend the most suitable trials for this patient.
-For each recommended trial explain specifically:
-  - Why it matches the patient's condition and diagnosis
-  - Whether the patient meets the eligibility criteria (age, sex, disease stage)
-  - What intervention or treatment the trial offers
-Be concise and clinically precise.
-"""
+        Task:
+        Recommend the most suitable trials for this patient.
+        For each recommended trial explain specifically:
+        - Why it matches the patient's condition and diagnosis
+        - Whether the patient meets the eligibility criteria (age, sex, disease stage)
+        - What intervention or treatment the trial offers
+        Be concise and clinically precise.
+        """
     model = GenerativeModel(LLM_MODEL)
     response = model.generate_content(prompt)
     return response.text

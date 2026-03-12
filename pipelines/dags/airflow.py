@@ -11,7 +11,7 @@ import pandas as pd
 from airflow import DAG
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
-
+from src.embed import embed_conditions
 from src.bias import generate_bias_report, save_bias_report
 from src.conditions.registry import REGISTRY
 from src.firestore_upload import upload_enriched_to_firestore
@@ -29,7 +29,7 @@ PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 FIRESTORE_DB = os.getenv("FIRESTORE_DB") or os.getenv("FIRESTORE_DATABASE")
 GOOGLE_CREDS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-CONDITIONS = ["diabetes", "breast_cancer"]
+CONDITIONS = ["diabetes"]
 log = logging.getLogger(__name__)
 
 
@@ -53,7 +53,7 @@ def check_gcp_config() -> bool:
     has_firestore = FIRESTORE_DB is not None
     has_creds = GOOGLE_CREDS is not None and os.path.exists(GOOGLE_CREDS)
 
-    gcp_configured = has_bucket and has_project and has_firestore and has_creds
+    gcp_configured = has_bucket and has_project and has_firestore 
     if not gcp_configured:
         log.warning("GCP configuration incomplete - upload tasks will be skipped")
         log.warning(f"  BUCKET_NAME / CLINICAL_TRIALS_BUCKET: {'yes' if has_bucket else 'missing'}")
@@ -74,7 +74,6 @@ def create_fetch_raw_task(condition: str):
             raw_file_path=abs_path(config["raw_path"]),
             condition_query=config["query"],
         )
-
     return task
 
 
@@ -90,7 +89,6 @@ def create_schema_raw_task(condition: str):
             mode="warn",
             allow_new_columns=True,
         )
-
     return task
 
 
@@ -103,7 +101,6 @@ def create_enrich_task(condition: str):
             disease=config["disease"],
             classifier=config["classifier"],
         )
-
     return task
 
 
@@ -119,7 +116,6 @@ def create_schema_processed_task(condition: str):
             mode="warn",
             allow_new_columns=True,
         )
-
     return task
 
 
@@ -127,7 +123,6 @@ def create_validate_task(condition: str):
     def task(**context) -> bool:
         config = get_config_for_condition(condition)
         return run_validation(enriched_file_path=abs_path(config["enriched_path"]))
-
     return task
 
 
@@ -141,7 +136,6 @@ def create_quality_task(condition: str):
             anomalies_path=os.path.join(reports_dir, "anomalies.json"),
         )
         return not anomalies_found(anomalies)
-
     return task
 
 
@@ -155,7 +149,6 @@ def create_stats_task(condition: str):
         )
         context["ti"].xcom_push(key=f"{condition}_total_trials", value=stats.get("total_trials"))
         log.info(f"[{condition}] Stats computed: total_trials={stats.get('total_trials')}")
-
     return task
 
 
@@ -172,7 +165,6 @@ def create_anomaly_task(condition: str):
             )
         else:
             context["ti"].xcom_push(key=f"{condition}_anomalies_found", value=None)
-
     return task
 
 
@@ -189,7 +181,7 @@ def create_notify_anomaly_email_task(condition: str):
             anomalies = json.load(f)
 
         has_anomaly = anomalies_found(anomalies)
-        force_send = False  # TEMP: forc÷e-send to verify MailHog
+        force_send = False
 
         if not has_anomaly and not force_send:
             log.info(f"[{condition}] No anomaly detected, skipping email")
@@ -209,8 +201,25 @@ def create_notify_anomaly_email_task(condition: str):
             smtp.send_message(msg)
 
         log.info(f"[{condition}] Test anomaly email sent to MailHog")
-
     return task
+
+
+def embed_trials(**context):
+    """
+    Embed all unembedded clinical trials from Firestore and upsert
+    their vectors into Vertex AI Vector Search index.
+
+    Runs AFTER all conditions have been uploaded to Firestore.
+    Only processes trials where embedded != True, so weekly runs
+    only embed the NEW trials added that week.
+    """
+    results = embed_conditions(
+        conditions=CONDITIONS,
+        project_id=PROJECT_ID,
+        force_reembed=False,
+    )
+    log.info(f"Embedding results: {results}")
+    context["ti"].xcom_push(key="embedding_results", value=results)
 
 
 def create_bias_task(condition: str):
@@ -226,7 +235,6 @@ def create_bias_task(condition: str):
         report = generate_bias_report(df)
         save_bias_report(report, bias_path=os.path.join(reports_dir, "bias_report.json"))
         context["ti"].xcom_push(key=f"{condition}_bias_level", value=report.get("bias_level"))
-
     return task
 
 
@@ -260,7 +268,6 @@ def create_save_reports_task(condition: str):
 
         with open(os.path.join(reports_dir, f"pipeline_summary_{condition}.json"), "w") as f:
             json.dump(summary, f, indent=2)
-
     return task
 
 
@@ -273,7 +280,6 @@ def create_upload_raw_task(condition: str):
             bucket_name=BUCKET_NAME,
             project_id=PROJECT_ID,
         )
-
     return task
 
 
@@ -286,7 +292,6 @@ def create_upload_reports_task(condition: str):
             bucket_name=BUCKET_NAME,
             project_id=PROJECT_ID,
         )
-
     return task
 
 
@@ -299,14 +304,13 @@ def create_upload_firestore_task(condition: str):
             project_id=PROJECT_ID,
             database=FIRESTORE_DB,
         )
-
     return task
 
 
 with DAG(
     dag_id="clinical_trials_data_pipeline",
     description="Parallel clinical trials pipeline for all conditions",
-    schedule_interval="@weekly",
+    schedule_interval=None,
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=["mlops", "clinical-trials", "parallel"],
@@ -317,6 +321,12 @@ with DAG(
         "email_on_failure": False,
     },
 ) as dag:
+
+    # ── Per-condition pipelines ───────────────────────────────────────────────
+    # Track the final upload_firestore task per condition so embed_trials
+    # can depend on ALL conditions being uploaded before it runs
+    firestore_upload_tasks = []
+
     for condition in CONDITIONS:
         with TaskGroup(group_id=f"{condition}_pipeline"):
             fetch_raw = PythonOperator(
@@ -401,7 +411,13 @@ with DAG(
                 python_callable=create_upload_firestore_task(condition),
                 execution_timeout=timedelta(minutes=15),
             )
-
+            embed = PythonOperator(
+                task_id="embed_trials",
+                python_callable=embed_trials,
+                execution_timeout=timedelta(minutes=60),  # embedding can take a while
+                trigger_rule="all_done",                  # run even if some conditions had issues
+            )
+            # ── Task dependencies ─────────────────────────────────────────────
             fetch_raw >> schema_raw >> enrich >> schema_processed >> validate >> quality >> [stats, anomaly, bias]
             anomaly >> notify_anomaly_email
             [stats, bias, notify_anomaly_email] >> save_reports
@@ -409,3 +425,13 @@ with DAG(
             check_gcp >> upload_raw_files_gcs
             check_gcp >> upload_reports_gcs
             check_gcp >> upload_firestore
+
+            # Track firestore upload task for embed dependency
+            firestore_upload_tasks.append(upload_firestore)
+
+            # ── Embed trials — runs AFTER all conditions are uploaded to Firestore ────
+            # This ensures all new trials are in Firestore before we try to embed them
+            
+
+            # All firestore uploads must complete before embedding starts
+            firestore_upload_tasks >> embed
