@@ -1,69 +1,71 @@
-# pipelines/dags/src/mock_rag_service.py
+# pipelines/dags/src/rag_service.py
 
 """
-Mock RAG Service with Real Firestore - TrialLink
-=================================================
+RAG Service - TrialLink
+========================
 Pipeline:
-  1. Embed patient summary       (real Vertex AI text-embedding-005)
-  2. Mock vector search          (cosine on in-memory index — no Vertex AI index yet)
-  3. Fetch trials from Firestore (real Firestore — clinical_trials_diabetes / clinical_trials_breast_cancer)
-  4. Rerank                      (real Vertex AI Ranking API)
-  5. Generate recommendation     (real Gemini)
+  1. Embed patient summary       (Vertex AI text-embedding-005)
+  2. Query Vertex AI Vector Search (real index — chunks from embed.py)
+  3. Fetch matched trials from Firestore (clinical_trials_diabetes / clinical_trials_breast_cancer)
+  4. Rerank using Vertex AI Ranking API
+  5. Generate recommendation using MedGemma (deployed on datapipeline-infra project)
 
-Only mocked:
-  - _build_mock_index(): embeds real Firestore trials in memory instead of reading from Vertex AI index
-  - query_vector_search(): cosine similarity instead of Vertex AI index endpoint call
+Embedding pipeline (embed.py) stores vectors as:
+    {NCT_ID}_{chunk_index}  e.g. NCT01234567_0, NCT01234567_1
+query_vector_search() dedupes chunks back to unique NCT IDs before Firestore fetch.
 
-Production swap (when Vertex AI Vector Search index is ready):
-  - Delete _build_mock_index() and _MOCK_TRIALS, _MOCK_EMBEDDINGS
-  - Replace query_vector_search() with the real implementation (see comment inside function)
-  - Everything else stays identical
+Env vars:
+    GCP_PROJECT_ID          e.g. "mlops-test-project-486922"   → Firestore + Vector Search
+    MODEL_PROJECT_ID        e.g. "datapipeline-infra"          → MedGemma endpoint
+    MEDGEMMA_ENDPOINT_ID    e.g. "4966380223210717184"
+    GCP_REGION              e.g. "us-central1"
+    FIRESTORE_DATABASE      e.g. "clinical-trials-db"
+    VECTOR_SEARCH_ENDPOINT_ID
+    DEPLOYED_INDEX_ID
 """
 
 from __future__ import annotations
 
 import os
 import logging
-import numpy as np
 import vertexai
 
 from vertexai.language_models import TextEmbeddingModel, TextEmbeddingInput
-from vertexai.generative_models import GenerativeModel
 from google.cloud import firestore
 from google.cloud import discoveryengine_v1alpha as discoveryengine
 from google.cloud import aiplatform
 
 logger = logging.getLogger(__name__)
 
-# ── Init Vertex AI ─────────────────────────────────────────────────────────────
+# ── Init Vertex AI (for embeddings — uses GCP_PROJECT_ID) ─────────────────────
 vertexai.init(
     project=os.getenv("GCP_PROJECT_ID"),
     location=os.getenv("GCP_REGION", "us-central1")
 )
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-GCP_PROJECT_ID  = os.getenv("GCP_PROJECT_ID")
-FIRESTORE_DB    = os.getenv("FIRESTORE_DB", "patient-db-sai")
-EMBEDDING_MODEL = "text-embedding-005"
-LLM_MODEL       = "gemini-2.0-flash"
-RETRIEVAL_TOP_K = 20   # candidates retrieved from vector search (broad net)
-RERANK_TOP_K    = 5    # final trials kept after reranking
-CONDITIONS      = ["diabetes", "breast_cancer"]  # matches Firestore collection suffixes
+GCP_PROJECT_ID       = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+MODEL_PROJECT_ID     = os.getenv("MODEL_PROJECT_ID", "datapipeline-infra")
+MEDGEMMA_ENDPOINT_ID = os.getenv("MEDGEMMA_ENDPOINT_ID", "4966380223210717184")
+FIRESTORE_DB         = os.getenv("FIRESTORE_DATABASE", "clinical-trials-db")
+EMBEDDING_MODEL      = "text-embedding-005"
+RETRIEVAL_TOP_K      = 20   # candidates from vector search (broad net for reranker)
+RERANK_TOP_K         = 5    # final trials after reranking
+CONDITIONS           = ["diabetes", "breast_cancer"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STEP 1 — EMBED TEXT
-# REAL + MOCK: Identical in both, no changes needed for production
 # ══════════════════════════════════════════════════════════════════════════════
 
 def embed_text(text: str, task_type: str = "RETRIEVAL_QUERY") -> list[float]:
     """
-    Embed any text using Vertex AI text-embedding-005.
+    Embed text using Vertex AI text-embedding-005.
 
     Args:
         text     : Text to embed
         task_type: "RETRIEVAL_QUERY"    → patient summaries
-                   "RETRIEVAL_DOCUMENT" → clinical trial documents
+                   "RETRIEVAL_DOCUMENT" → clinical trial documents (used by embed.py)
 
     Returns:
         768-dimensional embedding vector
@@ -80,169 +82,135 @@ def embed_text(text: str, task_type: str = "RETRIEVAL_QUERY") -> list[float]:
 
 def trial_to_text(trial: dict) -> str:
     """
-    Convert a Firestore trial document to plain text for embedding and reranking.
-    Field names match normalized snake_case columns from firestore_upload.py.
-
-    Original CSV columns → Firestore fields (after normalize_column_name):
-        NCT Number         → nct_number
-        Study Title        → study_title
-        Recruitment Status → recruitment_status
-        Brief Summary      → brief_summary
-        Eligibility Criteria → eligibility_criteria
-        Phase              → phase
-        Conditions         → conditions
-        Keywords           → keywords
-        Interventions      → interventions
-        disease            → disease
+    Convert a Firestore trial document to plain text for reranking.
+    Matches build_full_text() in embed.py exactly — same fields, same order.
+    This ensures the reranker operates on the same text representation
+    that was used to build the vector index.
     """
+    def _get(*keys) -> str:
+        for k in keys:
+            v = trial.get(k)
+            if v and str(v).strip() not in ("", "nan", "None"):
+                return str(v).strip()
+        return ""
+
+    title         = _get("study_title", "title")
+    conditions    = _get("conditions")
+    disease       = _get("disease")
+    phase         = _get("phase")
+    status        = _get("recruitment_status")
+    interventions = _get("interventions")
+    keywords      = _get("keywords")
+    summary       = _get("brief_summary")
+    eligibility   = _get("eligibility_criteria")
+
     return (
-        f"Title: {trial.get('study_title') or trial.get('title', '')}. "
-        f"Condition: {trial.get('conditions', '')}. "
-        f"Disease: {trial.get('disease', '')}. "
-        f"Keywords: {trial.get('keywords', '')}. "
-        f"Eligibility: {trial.get('eligibility_criteria', '')}. "
-        f"Phase: {trial.get('phase', '')}. "
-        f"Status: {trial.get('recruitment_status', '')}. "
-        f"Interventions: {trial.get('interventions', '')}. "
-        f"Summary: {trial.get('brief_summary', '')}."
+        f"Title: {title}. "
+        f"Condition: {conditions}. "
+        f"Disease: {disease}. "
+        f"Keywords: {keywords}. "
+        f"Phase: {phase}. "
+        f"Status: {status}. "
+        f"Interventions: {interventions}. "
+        f"Eligibility: {eligibility}. "
+        f"Summary: {summary}."
     )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MOCK ONLY — BUILD IN-MEMORY INDEX FROM REAL FIRESTORE DATA
-# Fetches all trials from real Firestore and embeds them in memory.
-# Simulates what Vertex AI Vector Search index holds in production.
-# DELETE this entire section when real Vertex AI index is ready.
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _fetch_all_trials_for_index() -> list[dict]:
-    """
-    Fetch ALL trial documents from Firestore across all conditions.
-    Used ONLY to build the mock in-memory index.
-
-    Real Firestore collections:
-        - clinical_trials_diabetes
-        - clinical_trials_breast_cancer
-
-    Returns:
-        List of all trial dicts with _doc_id field added
-    """
-    db = firestore.Client(project=GCP_PROJECT_ID, database=FIRESTORE_DB)
-    all_trials = []
-
-    for condition in CONDITIONS:
-        collection_name = f"clinical_trials_{condition}"
-        try:
-            docs = db.collection(collection_name).stream()
-            count = 0
-            for doc in docs:
-                trial = doc.to_dict()
-                trial["_doc_id"] = doc.id  # store Firestore doc ID (NCT number)
-                all_trials.append(trial)
-                count += 1
-            logger.info(f"Fetched {count} trials from {collection_name}")
-        except Exception as e:
-            logger.error(f"Failed to fetch from {collection_name}: {e}")
-
-    logger.info(f"Total trials fetched for mock index: {len(all_trials)}")
-    return all_trials
-
-
-def _build_mock_index() -> tuple[list[dict], list[list[float]]]:
-    """
-    Embed all real Firestore trials in memory.
-    Imitates what Vertex AI Vector Search index stores in production.
-
-    Returns:
-        trials    : list of trial dicts (real Firestore data)
-        embeddings: corresponding list of 768-dim embedding vectors
-    """
-    logger.info("Building mock in-memory index from real Firestore data...")
-    trials = _fetch_all_trials_for_index()
-
-    embeddings = []
-    for i, trial in enumerate(trials):
-        text = trial_to_text(trial)
-        embedding = embed_text(text, task_type="RETRIEVAL_DOCUMENT")
-        embeddings.append(embedding)
-        if (i + 1) % 10 == 0:
-            logger.info(f"  Embedded {i + 1}/{len(trials)} trials...")
-
-    logger.info(f"Mock index ready — {len(trials)} trials embedded")
-    return trials, embeddings
-
-
-# Build once at module load time (imitates a deployed, static index)
-_MOCK_TRIALS, _MOCK_EMBEDDINGS = _build_mock_index()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — QUERY VECTOR SEARCH
-# MOCK   : cosine similarity against in-memory index of real Firestore trials
-# REAL   : Vertex AI Vector Search index endpoint call (see swap comment below)
+# STEP 2 — QUERY VERTEX AI VECTOR SEARCH
+# embed.py stores chunks as {NCT_ID}_{chunk_index} e.g. NCT01234567_0
+# We fetch top_k * 3 chunks then dedupe back to unique NCT IDs
 # ══════════════════════════════════════════════════════════════════════════════
 
 def query_vector_search(
     patient_embedding: list[float],
     top_k: int = RETRIEVAL_TOP_K,
 ) -> list[str]:
-    
+    """
+    Query Vertex AI Vector Search index and return top_k unique NCT IDs.
+
+    Since embed.py stores one vector per chunk (NCT01234567_0, NCT01234567_1...),
+    we fetch top_k * 3 neighbors then dedupe by NCT ID, keeping the best
+    scoring chunk per trial.
+
+    Args:
+        patient_embedding : 768-dim vector from embed_text()
+        top_k             : Number of unique trials to return
+
+    Returns:
+        List of unique nct_number strings ordered by best chunk score
+    """
     aiplatform.init(
         project=GCP_PROJECT_ID,
-        location=os.getenv("GCP_REGION","us-central1")
+        location=os.getenv("GCP_REGION", "us-central1")
     )
-    index_endpoint = aiplatform.MatchingEngineIndexEndpoint(index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOOINT_ID"))
-    fetch_k = top_k*3
-    query = np.array(patient_embedding)
-    
-    logger.info("Querying Vertx AI vector search..")
-    
+
+    index_endpoint = aiplatform.MatchingEngineIndexEndpoint(
+        index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOINT_ID")
+    )
+
+    # Fetch more neighbors than needed to account for multiple chunks per trial
+    fetch_k = top_k * 3
+
+    logger.info(f"Querying Vertex AI Vector Search (fetching {fetch_k} chunks)...")
+
     results = index_endpoint.find_neighbors(
-        deployed_index_id=os.getev("DEPLOYED_INDEX_ID"),
+        deployed_index_id=os.getenv("DEPLOYED_INDEX_ID"),
         queries=[patient_embedding],
         num_neighbors=fetch_k
     )
-    
+
     matches = results[0]
-    
+
+    # Dedupe chunks → unique NCT IDs, keep best (lowest) distance per trial
+    # chunk ID format: NCT01234567_0 → rsplit("_", 1)[0] → NCT01234567
+    SIMILARITY_THRESHOLD = 0.7
+
     seen_nct_ids = {}
     for match in matches:
-        nct_id = match.id.rsplit("_",1)[0]
-        score = match.distance
-        if nct_id and  nct_id not in seen_nct_ids or score < seen_nct_ids[nct_id]:
-            seen_nct_ids[nct_id] = score 
-    
-    sorted_trials = sorted(seen_nct_ids.items(),key=lambda x:x[1])
-    top_nct_ids = [nct_id for nct_id,_ in sorted_trials[:top_k]]
+        nct_id = match.id.rsplit("_", 1)[0]
+        score  = match.distance
+        if score < SIMILARITY_THRESHOLD:
+            if nct_id not in seen_nct_ids or score < seen_nct_ids[nct_id]:
+                seen_nct_ids[nct_id] = score
 
-    logger.info(f"Vector search retrieved top {top_k}: {top_nct_ids}")
+    if not seen_nct_ids:
+        logger.warning("No trials above similarity threshold — condition may not be supported")
+        return []
+
+    # Sort by best score → take top_k unique trials
+    sorted_trials = sorted(seen_nct_ids.items(), key=lambda x: x[1])
+    top_nct_ids   = [nct_id for nct_id, _ in sorted_trials[:top_k]]
+
+    logger.info(f"Vector search → top {top_k} unique trials: {top_nct_ids}")
     return top_nct_ids
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 3 — FETCH MATCHED TRIALS FROM REAL FIRESTORE
-# REAL + MOCK: Identical in both, no changes needed for production
+# STEP 3 — FETCH MATCHED TRIALS FROM FIRESTORE
 # ══════════════════════════════════════════════════════════════════════════════
 
 def fetch_trials_from_firestore(nct_ids: list[str]) -> list[dict]:
     """
-    Fetch specific trial documents by NCT ID from real Firestore.
+    Fetch specific trial documents by NCT ID from Firestore.
     Searches across all condition collections since a patient query
-    may match trials from multiple conditions (e.g. diabetes + breast_cancer).
+    may match trials from multiple conditions.
 
     Firestore structure:
-        Collection : clinical_trials_{condition}   e.g. clinical_trials_diabetes
-        Document ID: {nct_number}                  e.g. NCT01234567
+        Database  : clinical-trials-db
+        Collection: clinical_trials_{condition}  e.g. clinical_trials_diabetes
+        Doc ID    : {nct_number}                 e.g. NCT01234567
 
     Args:
         nct_ids: NCT numbers returned by vector search
 
     Returns:
-        List of trial dicts fetched from Firestore (deduped by nct_number)
+        List of trial dicts (deduped by NCT ID)
     """
-    db = firestore.Client(project=GCP_PROJECT_ID, database=FIRESTORE_DB)
-    trials     = []
-    seen_ids   = set()
+    db       = firestore.Client(project=GCP_PROJECT_ID, database=FIRESTORE_DB)
+    trials   = []
+    seen_ids = set()
 
     for condition in CONDITIONS:
         collection_name = f"clinical_trials_{condition}"
@@ -265,7 +233,6 @@ def fetch_trials_from_firestore(nct_ids: list[str]) -> list[dict]:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STEP 3.5 — RERANK USING VERTEX AI RANKING API
-# REAL + MOCK: Identical in both, no changes needed for production
 # ══════════════════════════════════════════════════════════════════════════════
 
 def rerank_trials(
@@ -275,19 +242,15 @@ def rerank_trials(
 ) -> list[dict]:
     """
     Rerank retrieved trials using Vertex AI Ranking API.
-    Narrows top 20 candidates from vector search → top 5 most relevant.
-
-    The Ranking API performs a deeper semantic comparison between the patient
-    query and each trial document — significantly more accurate than cosine
-    similarity alone, especially for clinical terminology like HbA1c, HER2+.
+    Narrows top 20 candidates → top 5 most relevant.
 
     Args:
-        patient_summary : Original patient text used as the ranking query
-        trials          : Candidate trials from vector search + Firestore fetch
+        patient_summary : Patient profile text (used as ranking query)
+        trials          : Candidate trials from vector search + Firestore
         top_k           : How many trials to keep after reranking
 
     Returns:
-        Reranked and trimmed list of trial dicts.
+        Reranked list of trials.
         Falls back to original vector search order if Ranking API fails.
     """
     try:
@@ -299,7 +262,6 @@ def rerank_trials(
             ranking_config="default_ranking_config"
         )
 
-        # Each trial becomes a RankingRecord
         records = [
             discoveryengine.RankingRecord(
                 id=str(t.get("nct_number") or t.get("_doc_id", "")),
@@ -307,7 +269,7 @@ def rerank_trials(
                 content=trial_to_text(t)
             )
             for t in trials
-            if t.get("nct_number") or t.get("_doc_id")  # skip records without ID
+            if t.get("nct_number") or t.get("_doc_id")
         ]
 
         request = discoveryengine.RankRequest(
@@ -320,7 +282,6 @@ def rerank_trials(
 
         response = client.rank(request=request)
 
-        # Map reranked record IDs back to full trial dicts
         trial_map = {
             str(t.get("nct_number") or t.get("_doc_id", "")): t
             for t in trials
@@ -343,8 +304,8 @@ def rerank_trials(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 4 — GENERATE RECOMMENDATION WITH GEMINI
-# REAL + MOCK: Identical in both, no changes needed for production
+# STEP 4 — GENERATE RECOMMENDATION WITH MEDGEMMA
+# Uses MedGemma deployed on datapipeline-infra project endpoint
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_recommendation(
@@ -352,76 +313,99 @@ def generate_recommendation(
     retrieved_trials: list[dict],
 ) -> str:
     """
-    Generate clinical trial recommendations using Gemini.
-    Passes reranked trials as context alongside the patient profile.
+    Generate clinical trial recommendations using MedGemma.
+    MedGemma is deployed as a Vertex AI endpoint on datapipeline-infra project.
 
     Args:
         patient_summary  : Patient profile plain text
         retrieved_trials : Reranked top-k trials from Firestore
 
     Returns:
-        LLM-generated recommendation string
+        MedGemma-generated recommendation string
     """
     context = "\n\n".join([
         f"Trial {i + 1}:\n"
-        f"  NCT ID       : {t.get('nct_number', 'N/A')}\n"
-        f"  Title        : {t.get('study_title') or t.get('title', 'N/A')}\n"
-        f"  Condition    : {t.get('conditions', 'N/A')}\n"
-        f"  Disease      : {t.get('disease', 'N/A')}\n"
-        f"  Phase        : {t.get('phase', 'N/A')}\n"
-        f"  Status       : {t.get('recruitment_status', 'N/A')}\n"
-        f"  Eligibility  : {t.get('eligibility_criteria', 'N/A')}\n"
-        f"  Min Age      : {t.get('min_age', 'N/A')}\n"
-        f"  Max Age      : {t.get('max_age', 'N/A')}\n"
-        f"  Sex          : {t.get('sex', 'N/A')}\n"
-        f"  Interventions: {t.get('interventions', 'N/A')}\n"
-        f"  Summary      : {t.get('brief_summary', 'N/A')}\n"
-        f"  URL          : {t.get('study_url', 'N/A')}"
+        f"  NCT ID        : {t.get('nct_number', 'N/A')}\n"
+        f"  Title         : {t.get('study_title') or t.get('title', 'N/A')}\n"
+        f"  Condition     : {t.get('conditions', 'N/A')}\n"
+        f"  Disease       : {t.get('disease', 'N/A')}\n"
+        f"  Phase         : {t.get('phase', 'N/A')}\n"
+        f"  Status        : {t.get('recruitment_status', 'N/A')}\n"
+        f"  Eligibility   : {t.get('eligibility_criteria', 'N/A')}\n"
+        f"  Min Age       : {t.get('min_age', 'N/A')}\n"
+        f"  Max Age       : {t.get('max_age', 'N/A')}\n"
+        f"  Sex           : {t.get('sex', 'N/A')}\n"
+        f"  Interventions : {t.get('interventions', 'N/A')}\n"
+        f"  Summary       : {t.get('brief_summary', 'N/A')}\n"
+        f"  URL           : {t.get('study_url', 'N/A')}"
         for i, t in enumerate(retrieved_trials)
     ])
 
-    prompt = f"""
-        You are a clinical trial matching assistant for TrialLink, an MLOps platform
-        that connects patients with relevant clinical trials.
+    prompt = f"""You are a clinical trial matching assistant for TrialLink, an MLOps platform
+that connects patients with relevant clinical trials.
 
-        Patient Profile:
-        {patient_summary}
+Patient Profile:
+{patient_summary}
 
-        Top Matching Clinical Trials (reranked by relevance):
-        {context}
+Top Matching Clinical Trials (reranked by relevance):
+{context}
 
-        Task:
-        Recommend the most suitable trials for this patient.
-        For each recommended trial explain specifically:
-        - Why it matches the patient's condition and diagnosis
-        - Whether the patient meets the eligibility criteria (age, sex, disease stage)
-        - What intervention or treatment the trial offers
-        Be concise and clinically precise.
-        """
-    model = GenerativeModel(LLM_MODEL)
-    response = model.generate_content(prompt)
-    return response.text
+Task:
+Recommend the most suitable trials for this patient.
+For each recommended trial explain specifically:
+  - Why it matches the patient's condition and diagnosis
+  - Whether the patient meets the eligibility criteria (age, sex, disease stage)
+  - What intervention or treatment the trial offers
+Be concise and clinically precise.
+"""
+
+    try:
+        region = os.getenv("GCP_REGION", "us-central1")
+
+        # Init aiplatform with MedGemma's project (datapipeline-infra)
+        aiplatform.init(project=MODEL_PROJECT_ID, location=region)
+
+        endpoint = aiplatform.Endpoint(
+            endpoint_name=f"projects/{MODEL_PROJECT_ID}/locations/{region}/endpoints/{MEDGEMMA_ENDPOINT_ID}"
+        )
+
+        response = endpoint.predict(
+            instances=[{
+                "prompt": prompt
+            }]
+        )
+
+        # MedGemma returns predictions as a list — extract first result
+        result = response.predictions[0]
+
+        # Handle both string and dict response formats
+        if isinstance(result, dict):
+            return result.get("generated_text") or result.get("outputs") or str(result)
+        return str(result)
+
+    except Exception as e:
+        logger.error(f"MedGemma generation failed: {e}")
+        raise
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FULL RAG PIPELINE
-# REAL + MOCK: Identical orchestration in both
 # ══════════════════════════════════════════════════════════════════════════════
 
 def rag_pipeline(patient_summary: str) -> dict:
     """
     End-to-end RAG pipeline:
-        embed → mock vector search → real Firestore → rerank → Gemini
+        embed → Vertex AI Vector Search → Firestore → rerank → MedGemma
 
     Args:
         patient_summary: Plain text description of the patient profile
 
     Returns:
         {
-            "patient_summary"           : str,
-            "candidates_before_rerank"  : list[dict],  # top 20 from vector search
-            "retrieved_trials"          : list[dict],  # top 5 after reranking
-            "recommendation"            : str
+            "patient_summary"          : str,
+            "candidates_before_rerank" : list[dict],  # top 20 from vector search
+            "retrieved_trials"         : list[dict],  # top 5 after reranking
+            "recommendation"           : str
         }
     """
     logger.info("=" * 60)
@@ -433,11 +417,20 @@ def rag_pipeline(patient_summary: str) -> dict:
     patient_embedding = embed_text(patient_summary, task_type="RETRIEVAL_QUERY")
     logger.info(f"  Embedding dimensions: {len(patient_embedding)}")
 
-    # Step 2 — Mock vector search → top 20 NCT IDs
-    logger.info(f"Step 2: Mock vector search (retrieving top {RETRIEVAL_TOP_K} candidates)...")
+    # Step 2 — Vertex AI Vector Search → top 20 unique NCT IDs
+    logger.info(f"Step 2: Querying Vertex AI Vector Search (top {RETRIEVAL_TOP_K})...")
     candidate_nct_ids = query_vector_search(patient_embedding, top_k=RETRIEVAL_TOP_K)
 
-    # Step 3 — Fetch full trial docs from real Firestore
+    if not candidate_nct_ids:
+        logger.warning("No supported condition found for this patient")
+        return {
+            "patient_summary"          : patient_summary,
+            "candidates_before_rerank" : [],
+            "retrieved_trials"         : [],
+            "recommendation"           : "No clinical trials found for this condition. TrialLink currently supports diabetes and breast cancer trials only.",
+        }
+
+    # Step 3 — Fetch full trial docs from Firestore
     logger.info("Step 3: Fetching matched trials from Firestore...")
     candidates = fetch_trials_from_firestore(candidate_nct_ids)
     logger.info(f"  Fetched {len(candidates)} trial documents")
@@ -446,8 +439,8 @@ def rag_pipeline(patient_summary: str) -> dict:
     logger.info(f"Step 3.5: Reranking {len(candidates)} candidates → top {RERANK_TOP_K}...")
     reranked_trials = rerank_trials(patient_summary, candidates, top_k=RERANK_TOP_K)
 
-    # Step 4 — Generate recommendation
-    logger.info("Step 4: Generating recommendation with Gemini...")
+    # Step 4 — Generate recommendation with MedGemma
+    logger.info("Step 4: Generating recommendation with MedGemma...")
     recommendation = generate_recommendation(patient_summary, reranked_trials)
 
     logger.info("RAG Pipeline complete")
@@ -460,44 +453,93 @@ def rag_pipeline(patient_summary: str) -> dict:
         "recommendation"           : recommendation,
     }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# PATIENT FETCH HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════════════════
-# QUICK TEST
-# ══════════════════════════════════════════════════════════════════════════════
+PATIENT_DB = os.getenv("PATIENT_DB", "patient-db-dev")
+
+
+def get_patient_summary(patient_id: str) -> str:
+    """
+    Fetch patient from Firestore by ID and convert to text summary.
+
+    Args:
+        patient_id: UUID of patient in patient-db-dev
+
+    Returns:
+        Plain text summary ready for embedding
+    """
+    import sys
+    sys.path.insert(0, os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../sdk/patient_package")
+    ))
+    from data_models import Patient
+
+    db  = firestore.Client(project=GCP_PROJECT_ID, database=PATIENT_DB)
+    doc = db.collection("patients").document(patient_id).get()
+
+    if not doc.exists:
+        raise ValueError(f"Patient {patient_id} not found in Firestore")
+
+    patient = Patient(**doc.to_dict())
+    return patient.to_text_summary()
+
+
+def rag_pipeline_for_patient(patient_id: str) -> dict:
+    """
+    Fetch patient from Firestore and run full RAG pipeline.
+
+    Args:
+        patient_id: UUID of patient in patient-db-dev
+
+    Returns:
+        Same structure as rag_pipeline()
+    """
+    logger.info(f"Fetching patient {patient_id} from Firestore...")
+    summary = get_patient_summary(patient_id)
+    logger.info(f"Patient summary: {summary}")
+    return rag_pipeline(summary)
+
 
 if __name__ == "__main__":
+    import json
+    from datetime import datetime
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s  %(levelname)s  %(message)s"
     )
 
-    # Test Patient 1 — Diabetic female
-    test_patient_diabetes = """
-    45-year-old female with Type 2 diabetes diagnosed 3 years ago.
-    HbA1c: 8.2%, BMI: 28, no prior insulin therapy.
-    Currently on Metformin. No cardiovascular disease. Non-smoker.
-    """
+    os.makedirs("test_results/patients", exist_ok=True)
 
-    # Test Patient 2 — Breast cancer patient
-    test_patient_breast_cancer = """
-    52-year-old female diagnosed with HER2-positive breast cancer, stage II.
-    Post-menopausal. No prior targeted therapy. ECOG performance status 0.
-    """
+    # Fetch real patients from Firestore and run RAG pipeline
+    db   = firestore.Client(project=GCP_PROJECT_ID, database=PATIENT_DB)
+    docs = list(db.collection("patients").limit(5).stream())
 
-    # Run pipeline
-    print("\n" + "=" * 60)
-    print("TEST PATIENT: Diabetic Female")
-    print("=" * 60)
+    if not docs:
+        logger.warning("No patients found in Firestore")
+    else:
+        for doc in docs:
+            patient_id = doc.id
+            logger.info(f"\nRunning RAG pipeline for patient: {patient_id}")
+            try:
+                result = rag_pipeline_for_patient(patient_id)
+                logger.info(f"Matched trials: {len(result['retrieved_trials'])}")
+                logger.info(f"Recommendation:\n{result['recommendation']}")
 
-    result = rag_pipeline(test_patient_diabetes)
+                # Save results
+                with open(f"test_results/patients/{patient_id}.json", "w") as f:
+                    json.dump({
+                        "patient_id"               : patient_id,
+                        "patient_summary"          : result["patient_summary"],
+                        "candidates_before_rerank" : result["candidates_before_rerank"],
+                        "retrieved_trials"         : result["retrieved_trials"],
+                        "recommendation"           : result["recommendation"],
+                        "timestamp"                : datetime.utcnow().isoformat()
+                    }, f, indent=2, default=str)
 
-    print(f"\nCANDIDATES FROM VECTOR SEARCH ({len(result['candidates_before_rerank'])}):")
-    for t in result["candidates_before_rerank"]:
-        print(f"  - [{t.get('nct_number', 'N/A')}] {t.get('study_title') or t.get('title', 'N/A')}")
+                logger.info(f"Saved → test_results/patients/{patient_id}.json")
 
-    print(f"\nAFTER RERANKING (top {RERANK_TOP_K}):")
-    for t in result["retrieved_trials"]:
-        print(f"  - [{t.get('nct_number', 'N/A')}] {t.get('study_title') or t.get('title', 'N/A')}")
-
-    print("\nLLM RECOMMENDATION:")
-    print(result["recommendation"])
+            except Exception as e:
+                logger.error(f"Failed for patient {patient_id}: {e}")

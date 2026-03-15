@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List
+import sys
+sys.path.insert(0, "/opt/airflow/repo/pipelines/dags/src")
+from rag_service import rag_pipeline_for_patient
 import uuid
 import json
 from datetime import datetime
@@ -68,6 +71,29 @@ async def create_patient(
         raise HTTPException(status_code=500, detail=str(e))
 
     return patient
+
+
+
+@app.get("/me/trial-suggestions")
+async def get_trial_suggestions(token: dict = Depends(require_patient_or_admin)):
+    docs = get_db().collection(PATIENTS_COLLECTION)\
+        .where("demographics.firebase_uid", "==", token["uid"])\
+        .limit(1).stream()
+
+    for doc in docs:
+        patient_id = doc.id
+        
+        # Run full RAG pipeline for this patient
+        result = rag_pipeline_for_patient(patient_id)
+        
+        return {
+            "patient_id"      : patient_id,
+            "matched_trials"  : result["retrieved_trials"],
+            "recommendation"  : result["recommendation"],
+            "total_matches"   : len(result["retrieved_trials"])
+        }
+
+    raise HTTPException(status_code=404, detail="No profile found.")
 
 
 # ── Get single patient — admin can get any, patient can only get their own
