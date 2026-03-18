@@ -31,6 +31,7 @@ from vertexai.language_models import TextEmbeddingModel, TextEmbeddingInput
 from vertexai.generative_models import GenerativeModel
 from google.cloud import firestore
 from google.cloud import discoveryengine_v1alpha as discoveryengine
+from google.cloud import aiplatform
 
 logger = logging.getLogger(__name__)
 
@@ -185,56 +186,34 @@ def query_vector_search(
     patient_embedding: list[float],
     top_k: int = RETRIEVAL_TOP_K,
 ) -> list[str]:
-    """
-    Retrieve top_k most similar trial NCT IDs for a given patient embedding.
-
-    MOCK: cosine similarity on in-memory index built from real Firestore data.
-
-    ── PRODUCTION SWAP ──────────────────────────────────────────────────────────
-    When Vertex AI Vector Search index is ready, replace this entire function with:
-
-        from google.cloud import aiplatform
-
-        def query_vector_search(patient_embedding, top_k=RETRIEVAL_TOP_K):
-            aiplatform.init(
-                project=os.getenv("GCP_PROJECT_ID"),
-                location=os.getenv("GCP_REGION", "us-central1")
-            )
-            index_endpoint = aiplatform.MatchingEngineIndexEndpoint(
-                index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOINT_ID")
-            )
-            results = index_endpoint.find_neighbors(
-                deployed_index_id=os.getenv("DEPLOYED_INDEX_ID"),
-                queries=[patient_embedding],
-                num_neighbors=top_k
-            )
-            return [match.id for match in results[0]]  # returns nct_numbers
-    ─────────────────────────────────────────────────────────────────────────────
-
-    Args:
-        patient_embedding : 768-dim vector from embed_text()
-        top_k             : Number of candidates to retrieve (large, for reranker)
-
-    Returns:
-        List of nct_number strings ordered by cosine similarity (descending)
-    """
+    
+    aiplatform.init(
+        project=GCP_PROJECT_ID,
+        location=os.getenv("GCP_REGION","us-central1")
+    )
+    index_endpoint = aiplatform.MatchingEngineIndexEndpoint(index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOOINT_ID"))
+    fetch_k = top_k*3
     query = np.array(patient_embedding)
-
-    scored = []
-    for idx, trial_embedding in enumerate(_MOCK_EMBEDDINGS):
-        doc = np.array(trial_embedding)
-        cosine_sim = np.dot(query, doc) / (
-            np.linalg.norm(query) * np.linalg.norm(doc) + 1e-9
-        )
-        scored.append((cosine_sim, idx))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    top_trials  = [_MOCK_TRIALS[idx] for _, idx in scored[:top_k]]
-    top_nct_ids = [
-        str(t.get("nct_number") or t.get("_doc_id", ""))
-        for t in top_trials
-    ]
+    
+    logger.info("Querying Vertx AI vector search..")
+    
+    results = index_endpoint.find_neighbors(
+        deployed_index_id=os.getev("DEPLOYED_INDEX_ID"),
+        queries=[patient_embedding],
+        num_neighbors=fetch_k
+    )
+    
+    matches = results[0]
+    
+    seen_nct_ids = {}
+    for match in matches:
+        nct_id = match.id.rsplit("_",1)[0]
+        score = match.distance
+        if nct_id and  nct_id not in seen_nct_ids or score < seen_nct_ids[nct_id]:
+            seen_nct_ids[nct_id] = score 
+    
+    sorted_trials = sorted(seen_nct_ids.items(),key=lambda x:x[1])
+    top_nct_ids = [nct_id for nct_id,_ in sorted_trials[:top_k]]
 
     logger.info(f"Vector search retrieved top {top_k}: {top_nct_ids}")
     return top_nct_ids
@@ -402,23 +381,23 @@ def generate_recommendation(
     ])
 
     prompt = f"""
-You are a clinical trial matching assistant for TrialLink, an MLOps platform
-that connects patients with relevant clinical trials.
+        You are a clinical trial matching assistant for TrialLink, an MLOps platform
+        that connects patients with relevant clinical trials.
 
-Patient Profile:
-{patient_summary}
+        Patient Profile:
+        {patient_summary}
 
-Top Matching Clinical Trials (reranked by relevance):
-{context}
+        Top Matching Clinical Trials (reranked by relevance):
+        {context}
 
-Task:
-Recommend the most suitable trials for this patient.
-For each recommended trial explain specifically:
-  - Why it matches the patient's condition and diagnosis
-  - Whether the patient meets the eligibility criteria (age, sex, disease stage)
-  - What intervention or treatment the trial offers
-Be concise and clinically precise.
-"""
+        Task:
+        Recommend the most suitable trials for this patient.
+        For each recommended trial explain specifically:
+        - Why it matches the patient's condition and diagnosis
+        - Whether the patient meets the eligibility criteria (age, sex, disease stage)
+        - What intervention or treatment the trial offers
+        Be concise and clinically precise.
+        """
     model = GenerativeModel(LLM_MODEL)
     response = model.generate_content(prompt)
     return response.text
