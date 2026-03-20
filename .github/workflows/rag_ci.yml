@@ -1,0 +1,67 @@
+name: TrialLink RAG Pipeline CI
+
+on:
+  push:
+    branches:
+      - sanika-swarali-rag
+    paths:
+      - "pipelines/dags/src/**"
+
+env:
+  GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
+  MODEL_PROJECT_ID:          ${{ vars.MODEL_PROJECT_ID }}
+  MEDGEMMA_ENDPOINT_ID:      ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
+  GCP_REGION:                ${{ vars.GCP_REGION }}
+  FIRESTORE_DATABASE:        ${{ vars.FIRESTORE_DATABASE }}
+  VECTOR_SEARCH_ENDPOINT_ID: ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
+  DEPLOYED_INDEX_ID:         ${{ vars.DEPLOYED_INDEX_ID }}
+  MLFLOW_TRACKING_URI:       ${{ secrets.DATABRICKS_HOST }}/api/2.0/mlflow
+  DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  run-rag-pipeline:
+    name: Run RAG Evaluation + Log to Databricks MLflow
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout code ────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Authenticate to GCP ──────────────────────────────────────────────
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ── 3. Set up Python ────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── 4. Install dependencies ─────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            mlflow \
+            google-cloud-aiplatform \
+            google-cloud-firestore \
+            google-cloud-discoveryengine \
+            vertexai
+
+      # ── 5. Run RAG pipeline + log to Databricks MLflow ──────────────────────
+      - name: Run test_rag_pipeline.py
+        run: python test_rag_pipeline.py
+
+      # ── 6. Notify on failure ─────────────────────────────────────────────────
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "RAG pipeline CI failed"
+          echo "Branch : sanika-swarali-rag"
+          echo "Commit : ${{ github.sha }}"
+          echo "Author : ${{ github.actor }}"
+          echo "View MLflow runs at: ${{ vars.DATABRICKS_HOST }}/ml/experiments"

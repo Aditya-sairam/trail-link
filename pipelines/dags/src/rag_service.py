@@ -315,6 +315,7 @@ def generate_recommendation(
     """
     Generate clinical trial recommendations using MedGemma.
     MedGemma is deployed as a Vertex AI endpoint on datapipeline-infra project.
+    Uses chatCompletions request format as required by the vLLM endpoint.
 
     Args:
         patient_summary  : Patient profile plain text
@@ -341,47 +342,51 @@ def generate_recommendation(
         for i, t in enumerate(retrieved_trials)
     ])
 
-    prompt = f"""You are a clinical trial matching assistant for TrialLink, an MLOps platform
-that connects patients with relevant clinical trials.
+    system_prompt = (
+        "You are a clinical trial matching assistant for TrialLink. "
+        "Evaluate each trial's eligibility criteria strictly against the patient profile. "
+        "If any hard exclusion criterion is not met, state clearly the patient is ineligible and why. "
+        "Only recommend trials where the patient meets all inclusion criteria and none of the exclusion criteria. "
+        "Be concise and clinically precise."
+    )
 
-Patient Profile:
+    user_prompt = f"""Patient Profile:
 {patient_summary}
 
-Top Matching Clinical Trials (reranked by relevance):
+Top Matching Clinical Trials:
 {context}
 
-Task:
-Recommend the most suitable trials for this patient.
-For each recommended trial explain specifically:
-  - Why it matches the patient's condition and diagnosis
-  - Whether the patient meets the eligibility criteria (age, sex, disease stage)
-  - What intervention or treatment the trial offers
-Be concise and clinically precise.
-"""
+For each trial:
+1. State ELIGIBLE or INELIGIBLE
+2. Explain why — check condition, age, sex, stage, prior treatments
+3. Describe the intervention if eligible
+4. Flag any disqualifying criteria if ineligible"""
 
     try:
         region = os.getenv("GCP_REGION", "us-central1")
 
-        # Init aiplatform with MedGemma's project (datapipeline-infra)
         aiplatform.init(project=MODEL_PROJECT_ID, location=region)
 
         endpoint = aiplatform.Endpoint(
             endpoint_name=f"projects/{MODEL_PROJECT_ID}/locations/{region}/endpoints/{MEDGEMMA_ENDPOINT_ID}"
         )
 
-        response = endpoint.predict(
-            instances=[{
-                "prompt": prompt
-            }]
-        )
+        response = endpoint.predict(instances=[{
+            "@requestFormat": "chatCompletions",
+            "messages": [
+                {
+                    "role"   : "system",
+                    "content": [{"type": "text", "text": system_prompt}]
+                },
+                {
+                    "role"   : "user",
+                    "content": [{"type": "text", "text": user_prompt}]
+                }
+            ],
+            "max_tokens": 2048
+        }])
 
-        # MedGemma returns predictions as a list — extract first result
-        result = response.predictions[0]
-
-        # Handle both string and dict response formats
-        if isinstance(result, dict):
-            return result.get("generated_text") or result.get("outputs") or str(result)
-        return str(result)
+        return response.predictions["choices"][0]["message"]["content"]
 
     except Exception as e:
         logger.error(f"MedGemma generation failed: {e}")
