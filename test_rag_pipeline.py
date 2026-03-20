@@ -309,6 +309,22 @@ if __name__ == "__main__":
                     "status"         : "failed"
                 })
 
+        # ── Compute and log overall metrics ───────────────────────────────
+        success_results = [r for r in summary if r.get("status") == "success"]
+        failed_results  = [r for r in summary if r.get("status") == "failed"]
+
+        success_rate   = round(len(success_results) / len(TEST_PATIENTS), 2)
+        avg_candidates = round(sum(r["candidates_count"] for r in success_results) / max(len(success_results), 1), 2)
+        avg_matched    = round(sum(r["reranked_count"]   for r in success_results) / max(len(success_results), 1), 2)
+
+        mlflow.log_metrics({
+            "success_rate"            : success_rate,
+            "avg_candidates_retrieved": avg_candidates,
+            "avg_trials_matched"      : avg_matched,
+            "total_failed"            : len(failed_results),
+            "total_success"           : len(success_results),
+        })
+
         # ── Log slice metrics (bias detection) ────────────────────────────
         slice_metrics = compute_slice_metrics(summary)
         mlflow.log_metrics(slice_metrics)
