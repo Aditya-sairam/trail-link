@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - sanika-swarali-rag
-    paths:
-      - "pipelines/dags/src/**"
+
 
 env:
   GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
