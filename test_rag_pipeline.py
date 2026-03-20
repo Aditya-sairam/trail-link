@@ -38,7 +38,10 @@ logger = logging.getLogger(__name__)
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
 PATIENT_DB     = "patient-db-dev"
 # MLflow config
-MLFLOW_EXPERIMENT_NAME = "triallink-rag-pipeline"
+MLFLOW_EXPERIMENT_NAME = os.getenv(
+    "MLFLOW_EXPERIMENT_NAME",
+    "/Users/degaonkar.sw@northeastern.edu/triallink-rag-pipeline"
+)
 
 
 # ── Patient slices — used for bias metrics ─────────────────────────────────────
@@ -335,10 +338,6 @@ if __name__ == "__main__":
         logger.info(f"test_results/rag_output.json")
         logger.info(f"test_results/rag_summary.json")
         logger.info(f"test_results/patients/<patient_id>.json")
-
-
-
-
 
 
 

@@ -39,7 +39,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── MLflow ─────────────────────────────────────────────────────────────────────
-MLFLOW_EXPERIMENT_NAME = "triallink-sensitivity-analysis"
+MLFLOW_EXPERIMENT_NAME = os.getenv(
+    "MLFLOW_EXPERIMENT_NAME",
+    "/Users/degaonkar.sw@northeastern.edu/triallink-sensitivity-analysis"
+)
 mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
 # ── Default (baseline) values ──────────────────────────────────────────────────
