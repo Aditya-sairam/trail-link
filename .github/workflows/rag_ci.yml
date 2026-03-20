@@ -15,7 +15,7 @@ env:
   FIRESTORE_DATABASE:        ${{ vars.FIRESTORE_DATABASE }}
   VECTOR_SEARCH_ENDPOINT_ID: ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
   DEPLOYED_INDEX_ID:         ${{ vars.DEPLOYED_INDEX_ID }}
-  MLFLOW_TRACKING_URI:       ${{ secrets.DATABRICKS_HOST }}/api/2.0/mlflow
+  MLFLOW_TRACKING_URI:       databricks
   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
 
