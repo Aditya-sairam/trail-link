@@ -339,8 +339,6 @@ if __name__ == "__main__":
         logger.info(f"test_results/rag_summary.json")
         logger.info(f"test_results/patients/<patient_id>.json")
 
-
-
 # # test_rag_pipeline.py
 # """
 # End-to-end test with MLflow tracking:
