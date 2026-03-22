@@ -1,9 +1,16 @@
-name: TrialLink RAG Pipeline CI
+name: TrialLink Sensitivity Analysis
+
+# PDF requirement: hyperparameter tuning to optimize model performance
+# Triggered manually — too expensive for every push (9 runs x 13 patients)
+# Run this when RAG configuration changes or hyperparameter tuning is needed
 
 on:
-  push:
-    branches:
-      - sanika-swarali-rag
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running sensitivity analysis?"
+        required: true
+        default: "Hyperparameter tuning after RAG changes"
 
 env:
   GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
@@ -13,13 +20,13 @@ env:
   FIRESTORE_DATABASE:        ${{ vars.FIRESTORE_DATABASE }}
   VECTOR_SEARCH_ENDPOINT_ID: ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
   DEPLOYED_INDEX_ID:         ${{ vars.DEPLOYED_INDEX_ID }}
-  MLFLOW_TRACKING_URI:       databricks
   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
+  MLFLOW_EXPERIMENT_NAME:    "/Users/degaonkar.sw@northeastern.edu/triallink-sensitivity-analysis"
 
 jobs:
-  run-rag-pipeline:
-    name: Run RAG Evaluation + Log to Databricks MLflow
+  sensitivity-analysis:
+    name: Run Hyperparameter Sensitivity Analysis
     runs-on: ubuntu-latest
 
     steps:
@@ -50,16 +57,23 @@ jobs:
             google-cloud-discoveryengine \
             vertexai
 
-      # ── 5. Run RAG pipeline + log to Databricks MLflow ──────────────────────
-      - name: Run test_rag_pipeline.py
-        run: python tests/test_rag_pipeline.py
+      # ── 5. Log run reason ───────────────────────────────────────────────────
+      - name: Log run reason
+        run: |
+          echo "Sensitivity analysis triggered by: ${{ github.actor }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Commit: ${{ github.sha }}"
 
-      # ── 6. Notify on failure ─────────────────────────────────────────────────
+      # ── 6. Run sensitivity analysis → log to Databricks MLflow ─────────────
+      - name: Run test_sensitivity_analysis.py
+        run: python tests/test_sensitivity_analysis.py
+
+      # ── 7. Notify on failure ─────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
-          echo "RAG pipeline CI failed"
-          echo "Branch : sanika-swarali-rag"
-          echo "Commit : ${{ github.sha }}"
-          echo "Author : ${{ github.actor }}"
-          echo "View MLflow runs at: ${{ vars.DATABRICKS_HOST }}/ml/experiments"
+          echo "Sensitivity analysis failed"
+          echo "Triggered by : ${{ github.actor }}"
+          echo "Reason       : ${{ github.event.inputs.reason }}"
+          echo "Commit       : ${{ github.sha }}"
+          echo "View MLflow  : ${{ vars.DATABRICKS_HOST }}/ml/experiments"
