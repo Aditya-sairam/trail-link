@@ -151,3 +151,4 @@ zc.lockfile==4.0
 # Add these two lines to your existing requirements.txt
 google-cloud-aiplatform>=1.38.0
 vertexai>=1.38.0
+functions-framework==3.*

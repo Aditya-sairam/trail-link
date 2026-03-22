@@ -48,7 +48,8 @@ jobs:
             google-cloud-aiplatform \
             google-cloud-firestore \
             google-cloud-discoveryengine \
-            vertexai
+            vertexai \
+            functions-framework==3.*
 
       # ── 5. Run RAG pipeline + log to Databricks MLflow ──────────────────────
       - name: Run test_rag_pipeline.py
