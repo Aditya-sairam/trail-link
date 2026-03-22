@@ -284,24 +284,44 @@ def generate_recommendation(
     ])
 
     system_prompt = (
-        "You are a clinical trial matching assistant for TrialLink. "
-        "Evaluate each trial's eligibility criteria strictly against the patient profile. "
-        "If any hard exclusion criterion is not met, state clearly the patient is ineligible and why. "
-        "Only recommend trials where the patient meets all inclusion criteria and none of the exclusion criteria. "
-        "Be concise and clinically precise."
+        "You are a clinical trial matching specialist for TrialLink. "
+        "Rigorously evaluate patient eligibility for each trial using this exact process:\n"
+        "1. INCLUSION CHECK — go criterion by criterion. Does the patient meet EVERY inclusion criterion? "
+        "Cite the criterion text and the patient-specific evidence.\n"
+        "2. EXCLUSION CHECK — go criterion by criterion. Does the patient trigger ANY exclusion criterion? "
+        "A single triggered exclusion = INELIGIBLE. Name the exact criterion.\n"
+        "3. MEDICATION CHECK — do any current medications conflict with trial protocols or exclusion criteria?\n"
+        "4. ALLERGY CHECK — do known allergies conflict with the trial intervention?\n"
+        "5. COMORBIDITY CHECK — do active diagnoses (e.g. prior surgery, concurrent conditions) "
+        "qualify as exclusion conditions?\n"
+        "Verdict rules: ELIGIBLE only if ALL inclusions are met AND ZERO exclusions triggered. "
+        "INELIGIBLE if any exclusion applies — name it explicitly. "
+        "BORDERLINE if criteria are ambiguous or require clinical judgment. "
+        "Never use vague phrases like 'meets age criteria' — always tie the criterion to the patient data."
     )
 
-    user_prompt = f"""Patient Profile:
+    user_prompt = f"""PATIENT PROFILE:
 {patient_summary}
 
-Top Matching Clinical Trials:
+CLINICAL TRIALS TO EVALUATE:
 {context}
 
-For each trial:
-1. State ELIGIBLE or INELIGIBLE
-2. Explain why — check condition, age, sex, stage, prior treatments
-3. Describe the intervention if eligible
-4. Flag any disqualifying criteria if ineligible"""
+For EACH trial, structure your response exactly as follows:
+
+**Trial [N]: [NCT ID] — [Title]**
+VERDICT: ELIGIBLE / INELIGIBLE / BORDERLINE
+
+Inclusion Criteria Check:
+- [criterion]: ✓ Met / ✗ Not Met — [specific patient evidence]
+
+Exclusion Criteria Check:
+- [criterion]: ✓ Not triggered / ✗ TRIGGERED — [specific patient evidence]
+
+Medication/Allergy Conflicts: [None OR specific conflict with evidence]
+Comorbidity Flags: [specific diagnoses that affect eligibility]
+Intervention Summary: [what the patient would undergo if enrolled]
+Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or disqualification]
+---"""
 
     try:
         region = os.getenv("GCP_REGION", "us-central1")
