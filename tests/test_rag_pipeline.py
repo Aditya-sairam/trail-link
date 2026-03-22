@@ -22,11 +22,16 @@ import logging
 import mlflow
 from datetime import datetime
 
+
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sdk/patient_package")))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipelines/dags/src")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models")))  # ← point to models folder
+
+from rag_service import rag_pipeline  # ← import directly
+
 
 from google.cloud import firestore
-from models.rag_service import rag_pipeline
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -336,6 +341,7 @@ if __name__ == "__main__":
             logger.info(f"{'='*60}")
 
             try:
+                
                 result = rag_pipeline(text_summary)
 
                 candidates_count = len(result["candidates_before_rerank"])
