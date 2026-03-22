@@ -261,6 +261,9 @@ def check_rollback(current_success_rate: float, current_avg_matched: float):
         raise ValueError(f"Rollback triggered — performance degradation detected: {'; '.join(errors)}")
 
     logger.info("Rollback check passed — no performance degradation detected")
+
+
+def compute_slice_metrics(results: list[dict]) -> dict:
     """
     Compute success rate and avg trials matched per slice.
     Slices: condition, age_group, sex.
@@ -454,13 +457,7 @@ if __name__ == "__main__":
         for k, v in slice_metrics.items():
             print(f"   {k}: {v}")
 
-        print(f"\nMLflow run logged to experiment: {MLFLOW_EXPERIMENT_NAME}")
-        logger.info(f"test_results/rag_output.json")
-        logger.info(f"test_results/rag_summary.json")
-        logger.info(f"test_results/patients/<patient_id>.json")
-
-
-
+            print(f"\nMLflow run logged to experiment: {MLFLOW_EXPERIMENT_NAME}")
 
 
 # # test_rag_pipeline.py
