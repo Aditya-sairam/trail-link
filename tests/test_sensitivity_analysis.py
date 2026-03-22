@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.abspath("sdk/patient_package"))
 sys.path.insert(0, os.path.abspath("pipelines/dags/src"))
 
 # Patch rag_service config before importing pipeline
-import rag_service
+import models.rag_service as rag_service
 
 logging.basicConfig(
     level=logging.INFO,

@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pipelines/dags/src")))
 
 from google.cloud import firestore
-from rag_service import rag_pipeline
+from models.rag_service import rag_pipeline
 
 logging.basicConfig(
     level=logging.INFO,

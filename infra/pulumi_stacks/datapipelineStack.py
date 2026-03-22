@@ -17,10 +17,11 @@ class DataPipelineStack:
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
         self._deploy_index_to_endpoint() 
-        self.medgemma_endpoint = self._create_medgemma_endpoint()
-        self._deploy_medgemma_to_endpoint()
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
+
+        self._deploy_gemini_model()
+        
         self._grant_storage_access()
         self._grant_vertex_ai_access()  
         self._grant_access_to_firestore()    
@@ -85,59 +86,6 @@ class DataPipelineStack:
         )
     
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # MEDGEMMA ENDPOINT
-    # ══════════════════════════════════════════════════════════════════════════
-
-    def _create_medgemma_endpoint(self) -> gcp.vertex.AiEndpoint:
-        """
-        Creates a Vertex AI endpoint for MedGemma 4B IT.
-        The model is deployed to this endpoint automatically via _deploy_medgemma_to_endpoint().
-        """
-        return gcp.vertex.AiEndpoint(
-            f"{self.name}-medgemma-endpoint",
-            project=self.project_id,
-            location=self.region,
-            display_name=f"medgemma-4b-endpoint-{self.name}",
-            opts=pulumi.ResourceOptions(
-                depends_on=[self.service_account],
-            ),
-        )
-
-    def _deploy_medgemma_to_endpoint(self):
-        """
-        Deploys MedGemma 4B IT from Model Garden to the endpoint.
-        Uses pulumi_command to run gcloud CLI as part of pulumi up.
-        Pulumi's gcp provider does not support Model Garden model deployment natively.
-        """
-        endpoint_id = self.medgemma_endpoint.id.apply(
-            lambda full_id: full_id.split("/")[-1]
-        )
-
-        local.Command(
-            f"{self.name}-deploy-medgemma",
-            create=pulumi.Output.concat(
-                "gcloud ai endpoints deploy-model ", endpoint_id,
-                " --region=", self.region,
-                " --project=", self.project_id,
-                " --model=google_medgemma-4b-it-1773347769604",
-                " --display-name=medgemma-4b",
-                " --machine-type=g2-standard-24",
-                " --accelerator=type=nvidia-l4,count=2",
-                " --traffic-split=0=100"
-            ),
-            # Undeploy when pulumi destroy is run
-            delete=pulumi.Output.concat(
-                "gcloud ai endpoints undeploy-model ", endpoint_id,
-                " --region=", self.region,
-                " --project=", self.project_id,
-                " --deployed-model-id=medgemma-4b"
-            ),
-            opts=pulumi.ResourceOptions(
-                depends_on=[self.medgemma_endpoint],
-            ),
-        )
-
     def _create_airflow_cloudrun_service(self):
         return gcp.cloudrunv2.Service(
             f"{self.name}-airflow-service",
@@ -175,6 +123,16 @@ class DataPipelineStack:
                 depends_on=[self.service_account],
             ),
         )
+
+    ### Trying to deploy gemini flash:
+    def _deploy_gemini_model(self):
+        gcp.vertex.AiEndpointWithModelGardenDeployment("deploy",
+              publisher_model_name="publishers/google/models/medgemma@medgemma-4b-it",
+            location=self.region,
+            model_config={
+                "accept_eula": True,
+            },
+           )
 
     def _keep_alive_ping_for_airflow(self):
         return gcp.cloudscheduler.Job(
@@ -298,6 +256,6 @@ class DataPipelineStack:
         pulumi.export(f"{self.name}_pipeline_sa", self.service_account.email)
         pulumi.export(f"{self.name}_vector_search_index_id", self.vector_index.id)
         pulumi.export(f"{self.name}_vector_search_endpoint_id", self.vector_endpoint.id)
-        pulumi.export(f"{self.name}_medgemma_endpoint_id", self.medgemma_endpoint.id)
+        # pulumi.export(f"{self.name}_medgemma_endpoint_id", self.medgemma_endpoint.id)
 
     
