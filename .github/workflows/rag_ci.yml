@@ -80,7 +80,7 @@ jobs:
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
-      # ── Notify ───────────────────────────────────────────────────────────
+      # ── Notify ─────────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
