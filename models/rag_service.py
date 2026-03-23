@@ -57,7 +57,7 @@ vertexai.init(
 # ── Config ─────────────────────────────────────────────────────────────────────
 GCP_PROJECT_ID       = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
 MODEL_PROJECT_ID     = os.getenv("MODEL_PROJECT_ID", "mlops-test-project-486922")
-MEDGEMMA_ENDPOINT_ID = os.getenv("MEDGEMMA_ENDPOINT_ID", "mg-endpoint-bb15ba35-9f1b-4101-acda-037a1c2d3de0")
+MEDGEMMA_ENDPOINT_ID = os.getenv("MEDGEMMA_ENDPOINT_ID", "mg-endpoint-783bd401-236f-4b07-94ef-7da7cde4c49b")
 FIRESTORE_DB         = os.getenv("FIRESTORE_DATABASE", "clinical-trials-db")
 PATIENT_DB           = os.getenv("PATIENT_DB", "patient-db-dev")
 EMBEDDING_MODEL      = "text-embedding-005"
@@ -78,7 +78,7 @@ def run_rag_pipeline(cloud_event):
 
     db = firestore.Client(
             project=os.getenv("GCP_PROJECT_ID"),
-            database=os.getenv("TRAIL_SUGGESTIONS_STORE", "")
+            database=os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-suggestions-db")
         )
 
     # Decode Pub/Sub message
