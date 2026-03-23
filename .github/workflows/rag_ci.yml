@@ -53,7 +53,7 @@ jobs:
         working-directory: ./infra
         run: pulumi stack export > /tmp/pulumi_pre_deploy.json
         env:
-          PULUMI_BACKEND_URL: gs://your-gcs-bucket-name
+          PULUMI_BACKEND_URL:  pulumi-state-mlops-test-project-486922
 
       # ── Deploy ────────────────────────────────────────────────────────────
       - name: Deploy with Pulumi
