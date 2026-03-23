@@ -6,18 +6,26 @@ on:
       - sanika-swarali-rag
 
 env:
-  GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
-  MODEL_PROJECT_ID:          ${{ vars.MODEL_PROJECT_ID }}
-  MEDGEMMA_ENDPOINT_ID:      ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
-  GCP_REGION:                ${{ vars.GCP_REGION }}
-  FIRESTORE_DATABASE:        ${{ vars.FIRESTORE_DATABASE }}
-  VECTOR_SEARCH_ENDPOINT_ID: ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
-  DEPLOYED_INDEX_ID:         ${{ vars.DEPLOYED_INDEX_ID }}
-  MLFLOW_TRACKING_URI:       databricks
-  DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
-  DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
-  PULUMI_BACKEND_URL:        gs://pulumi-state-mlops-test-project-486922
-  PULUMI_CONFIG_PASSPHRASE:  ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+  GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
+  MODEL_PROJECT_ID:            ${{ vars.MODEL_PROJECT_ID }}
+  MODEL_PROJECT_NUMBER:        ${{ vars.MODEL_PROJECT_NUMBER }}
+  MEDGEMMA_ENDPOINT_ID:        ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
+  MEDGEMMA_DEDICATED_DNS:      ${{ vars.MEDGEMMA_DEDICATED_DNS }}
+  GCP_REGION:                  ${{ vars.GCP_REGION }}
+  FIRESTORE_DATABASE:          ${{ vars.FIRESTORE_DATABASE }}
+  VECTOR_SEARCH_ENDPOINT_ID:   ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
+  DEPLOYED_INDEX_ID:           ${{ vars.DEPLOYED_INDEX_ID }}
+  MLFLOW_TRACKING_URI:         databricks
+  DATABRICKS_HOST:             ${{ vars.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN:            ${{ secrets.DATABRICKS_TOKEN }}
+  PULUMI_BACKEND_URL:          gs://pulumi-state-mlops-test-project-486922
+  PULUMI_CONFIG_PASSPHRASE:    ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+  ENABLE_INPUT_LLM_GUARDRAIL:  "true"
+  ENABLE_OUTPUT_LLM_GUARDRAIL: "true"
+
+permissions:
+  issues: write
+  contents: read
 
 jobs:
   deploy-and-test:
@@ -43,12 +51,16 @@ jobs:
           pip install --upgrade pip
           pip install \
             mlflow \
+            databricks-sdk \
             pulumi \
             google-cloud-aiplatform \
             google-cloud-firestore \
             google-cloud-discoveryengine \
+            google-auth \
             vertexai \
-            functions-framework==3.*
+            functions-framework==3.* \
+            python-dotenv \
+            requests
 
       # ── Login to GCS backend ──────────────────────────────────────────────
       - name: Login to Pulumi GCS backend
@@ -58,7 +70,6 @@ jobs:
       - name: Snapshot pre-deploy Pulumi state
         working-directory: ./infra/pulumi_stacks
         run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
-
 
       # ── Deploy ────────────────────────────────────────────────────────────
       - name: Deploy with Pulumi
@@ -70,20 +81,173 @@ jobs:
         id: rag_test
         run: python tests/test_rag_pipeline.py
 
+      # ── Upload test results (always, even on failure) ─────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-test-results
+          path: tests/test_results/
+          retention-days: 30
+
       # ── Rollback if tests failed ──────────────────────────────────────────
       - name: Rollback Pulumi deployment
         if: failure() && steps.rag_test.outcome == 'failure'
         working-directory: ./infra/pulumi_stacks
         run: |
+          echo "🔄 Rolling back to pre-deploy state..."
           pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
           pulumi up --yes --stack dev
+          echo "✅ Rollback complete"
 
-      # ── Notify ───────────────────────────────────────────────────────────
-      - name: Notify on failure
+      # ── Alert: Create GitHub Issue on failure ─────────────────────────────
+      - name: Create GitHub Issue on failure
         if: failure()
-        run: |
-          echo "Pipeline failed"
-          echo "Branch : sanika-swarali-rag"
-          echo "Commit : ${{ github.sha }}"
-          echo "Author : ${{ github.actor }}"
-          echo "MLflow : ${{ vars.DATABRICKS_HOST }}/ml/experiments"
+        uses: actions/github-script@v7
+        env:
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+          RAG_TEST_OUTCOME: ${{ steps.rag_test.outcome }}
+        with:
+          script: |
+            const wasRollback = process.env.RAG_TEST_OUTCOME === 'failure';
+
+            const title = wasRollback
+              ? `🔄 RAG Pipeline Failed + Rolled Back — ${context.sha.slice(0, 7)}`
+              : `🚨 RAG Pipeline CI Failed — ${context.sha.slice(0, 7)}`;
+
+            const body = [
+              `## RAG Pipeline CI Failure`,
+              ``,
+              `| Field | Value |`,
+              `|-------|-------|`,
+              `| **Branch** | \`${context.ref}\` |`,
+              `| **Commit** | [\`${context.sha.slice(0, 7)}\`](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}) |`,
+              `| **Author** | @${context.actor} |`,
+              `| **CI Run** | [View logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |`,
+              `| **MLflow** | [View experiments](${process.env.DATABRICKS_HOST}/ml/experiments) |`,
+              `| **Rollback** | ${wasRollback ? '✅ Pulumi rolled back to previous state' : '⚠️ Failure occurred before or during deploy'} |`,
+              ``,
+              wasRollback ? `### 🔄 Automatic Rollback Executed` : `### ⛔ Deployment Failed`,
+              wasRollback
+                ? `The RAG evaluation failed after deployment. Pulumi has automatically rolled back to the pre-deploy state. The previous version is now live.`
+                : `The CI pipeline failed before the RAG evaluation step could complete.`,
+              ``,
+              `### Possible causes:`,
+              `- **Validation threshold failed** — success_rate or avg_matched below minimum`,
+              `- **Bias detected** — demographic slice performing significantly worse than average`,
+              `- **Rollback triggered** — performance degradation vs previous MLflow run`,
+              `- **Guardrail errors** — input/output guardrail failures`,
+              `- **Infrastructure error** — GCP auth, endpoint down, Firestore unreachable`,
+              ``,
+              `### Action required:`,
+              `1. Check the [CI logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              `2. Download test artifacts from the CI run for per-patient details`,
+              `3. Review the MLflow run for metrics and logged artifacts`,
+              `4. Fix the issue and re-push to trigger a new CI run`,
+              ``,
+              `cc @Aditya-sairam @ItSwara @Sannn7 @Baidyam @Vaishnavi0805`,
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['ci-failure', 'rag-pipeline'],
+              assignees: [context.actor],
+            });
+
+            console.log(`Issue created and assigned to ${context.actor}`);
+
+
+
+
+# name: TrialLink RAG Pipeline CI
+
+# on:
+#   push:
+#     branches:
+#       - sanika-swarali-rag
+
+# env:
+#   GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
+#   MODEL_PROJECT_ID:          ${{ vars.MODEL_PROJECT_ID }}
+#   MEDGEMMA_ENDPOINT_ID:      ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
+#   GCP_REGION:                ${{ vars.GCP_REGION }}
+#   FIRESTORE_DATABASE:        ${{ vars.FIRESTORE_DATABASE }}
+#   VECTOR_SEARCH_ENDPOINT_ID: ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
+#   DEPLOYED_INDEX_ID:         ${{ vars.DEPLOYED_INDEX_ID }}
+#   MLFLOW_TRACKING_URI:       databricks
+#   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
+#   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
+#   PULUMI_BACKEND_URL:        gs://pulumi-state-mlops-test-project-486922
+#   PULUMI_CONFIG_PASSPHRASE:  ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+
+# jobs:
+#   deploy-and-test:
+#     name: Deploy + RAG Evaluation + Rollback on Failure
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       - name: Authenticate to GCP
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install dependencies
+#         run: |
+#           pip install --upgrade pip
+#           pip install \
+#             mlflow \
+#             pulumi \
+#             google-cloud-aiplatform \
+#             google-cloud-firestore \
+#             google-cloud-discoveryengine \
+#             vertexai \
+#             functions-framework==3.*
+
+#       # ── Login to GCS backend ──────────────────────────────────────────────
+#       - name: Login to Pulumi GCS backend
+#         run: pulumi login gs://pulumi-state-mlops-test-project-486922
+
+#       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
+#       - name: Snapshot pre-deploy Pulumi state
+#         working-directory: ./infra/pulumi_stacks
+#         run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
+
+
+#       # ── Deploy ────────────────────────────────────────────────────────────
+#       - name: Deploy with Pulumi
+#         working-directory: ./infra/pulumi_stacks
+#         run: pulumi up --yes --stack dev
+
+#       # ── Test ──────────────────────────────────────────────────────────────
+#       - name: Run test_rag_pipeline.py
+#         id: rag_test
+#         run: python tests/test_rag_pipeline.py
+
+#       # ── Rollback if tests failed ──────────────────────────────────────────
+#       - name: Rollback Pulumi deployment
+#         if: failure() && steps.rag_test.outcome == 'failure'
+#         working-directory: ./infra/pulumi_stacks
+#         run: |
+#           pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
+#           pulumi up --yes --stack dev
+
+#       # ── Notify ───────────────────────────────────────────────────────────
+#       - name: Notify on failure
+#         if: failure()
+#         run: |
+#           echo "Pipeline failed"
+#           echo "Branch : sanika-swarali-rag"
+#           echo "Commit : ${{ github.sha }}"
+#           echo "Author : ${{ github.actor }}"
+#           echo "MLflow : ${{ vars.DATABRICKS_HOST }}/ml/experiments"
