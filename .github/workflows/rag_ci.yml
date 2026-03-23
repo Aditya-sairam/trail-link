@@ -51,14 +51,14 @@ jobs:
       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
       - name: Snapshot pre-deploy Pulumi state
         working-directory: ./infra
-        run: pulumi stack export --stack prod > /tmp/pulumi_pre_deploy.json
+        run: pulumi stack export > /tmp/pulumi_pre_deploy.json
         env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          PULUMI_BACKEND_URL: gs://your-gcs-bucket-name
 
       # ── Deploy ────────────────────────────────────────────────────────────
       - name: Deploy with Pulumi
         working-directory: ./infra
-        run: pulumi up --yes --stack prod
+        run: pulumi up --yes 
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
@@ -75,8 +75,8 @@ jobs:
           echo "RAG tests failed — rolling back to pre-deploy state"
           echo "Commit : ${{ github.sha }}"
           echo "Author : ${{ github.actor }}"
-          pulumi stack import --stack prod --file /tmp/pulumi_pre_deploy.json
-          pulumi up --yes --stack prod
+          pulumi stack import  --file /tmp/pulumi_pre_deploy.json
+          pulumi up --yes 
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
