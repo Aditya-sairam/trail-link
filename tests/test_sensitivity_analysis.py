@@ -203,14 +203,14 @@ def run_with_config(
                 })
                 logger.info(f"  {pid}: {candidates_count} candidates → {matched_count} matched")
 
+                # Track guardrail blocks
+                guardrail_status = result.get("guardrail", {}).get("status", "none")
+                if guardrail_status == "blocked":
+                    results[-1]["guardrail_blocked"] = True
+
             except Exception as e:
                 logger.error(f"  {pid}: FAILED — {e}")
                 results.append({"patient_id": pid, "slice": slice_, "status": "failed", "error": str(e)})
-
-            # Re-init vertexai to correct project after each patient
-            # (prevents MedGemma's aiplatform.init from polluting next embedding call)
-            import vertexai
-            vertexai.init(project=gcp_project, location=gcp_region)
 
         # Overall metrics
         n               = max(len(total_candidates), 1)
@@ -327,13 +327,6 @@ if __name__ == "__main__":
 
 
 
-
-
-
-
-
-# 
-# 
 # """
 # Sensitivity Analysis - TrialLink RAG Pipeline
 # ==============================================
@@ -361,9 +354,12 @@ if __name__ == "__main__":
 # import logging
 # import mlflow
 # from datetime import datetime
+# from dotenv import load_dotenv
 
-# sys.path.insert(0, os.path.abspath("sdk/patient_package"))
-# sys.path.insert(0, os.path.abspath("pipelines/dags/src"))
+# load_dotenv()
+
+# # Fix sys.path — add repo root so `models.rag_service` resolves
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # # Patch rag_service config before importing pipeline
 # import models.rag_service as rag_service
@@ -373,6 +369,9 @@ if __name__ == "__main__":
 #     format="%(asctime)s  %(levelname)s  %(message)s"
 # )
 # logger = logging.getLogger(__name__)
+
+# # ── Config ─────────────────────────────────────────────────────────────────────
+# RESULTS_DIR = os.path.join(os.path.dirname(__file__), "test_results", "sensitivity")
 
 # # ── MLflow ─────────────────────────────────────────────────────────────────────
 # MLFLOW_EXPERIMENT_NAME = os.getenv(
@@ -411,19 +410,24 @@ if __name__ == "__main__":
 # ]
 
 
+# def save_json(data, filepath: str):
+#     """Write JSON to disk for local output and MLflow artifact logging."""
+#     os.makedirs(os.path.dirname(filepath), exist_ok=True)
+#     with open(filepath, "w") as f:
+#         json.dump(data, f, indent=2, default=str)
+#     logger.info(f"  Saved: {filepath}")
+
+
 # def run_with_config(
 #     retrieval_top_k      : int,
 #     rerank_top_k         : int,
 #     similarity_threshold : float,
-#     param_name           : str,   # which param is being varied
+#     param_name           : str,
 # ) -> dict:
 #     """
 #     Run the full pipeline for all 13 patients with given config.
 #     Patches rag_service constants before each run.
-#     Logs results to a single MLflow run.
-
-#     Returns:
-#         summary dict with avg metrics
+#     Logs results + artifacts to a single MLflow run.
 #     """
 #     run_name = (
 #         f"{param_name}_"
@@ -440,19 +444,17 @@ if __name__ == "__main__":
 #     logger.info(f"{'='*60}")
 
 #     # Patch rag_service constants
-#     rag_service.RETRIEVAL_TOP_K      = retrieval_top_k
-#     rag_service.RERANK_TOP_K         = rerank_top_k
+#     rag_service.RETRIEVAL_TOP_K = retrieval_top_k
+#     rag_service.RERANK_TOP_K    = rerank_top_k
 
-#     # Patch similarity threshold inside query_vector_search
-#     # We do this by monkeypatching the function
+#     # Save original function + project config
 #     original_query = rag_service.query_vector_search
+#     gcp_project    = rag_service.GCP_PROJECT_ID
+#     gcp_region     = os.getenv("GCP_REGION", "us-central1")
 
 #     def patched_query(patient_embedding, top_k=retrieval_top_k):
 #         from google.cloud import aiplatform
-#         aiplatform.init(
-#             project=rag_service.GCP_PROJECT_ID,
-#             location=os.getenv("GCP_REGION", "us-central1")
-#         )
+#         aiplatform.init(project=gcp_project, location=gcp_region)
 #         index_endpoint = aiplatform.MatchingEngineIndexEndpoint(
 #             index_endpoint_name=os.getenv("VECTOR_SEARCH_ENDPOINT_ID")
 #         )
@@ -462,7 +464,7 @@ if __name__ == "__main__":
 #             queries=[patient_embedding],
 #             num_neighbors=fetch_k
 #         )
-#         matches     = results[0]
+#         matches      = results[0]
 #         seen_nct_ids = {}
 #         for match in matches:
 #             nct_id = match.id.rsplit("_", 1)[0]
@@ -480,11 +482,15 @@ if __name__ == "__main__":
 
 #     rag_service.query_vector_search = patched_query
 
-#     results       = []
-#     ood_matched   = []
+#     results          = []
+#     ood_matched      = []
 #     total_candidates = []
 #     total_matched    = []
 #     success_count    = 0
+
+#     # Per-run artifact directory
+#     run_results_dir = os.path.join(RESULTS_DIR, run_name)
+#     os.makedirs(run_results_dir, exist_ok=True)
 
 #     with mlflow.start_run(run_name=run_name):
 #         mlflow.log_params({
@@ -530,6 +536,11 @@ if __name__ == "__main__":
 #                 logger.error(f"  {pid}: FAILED — {e}")
 #                 results.append({"patient_id": pid, "slice": slice_, "status": "failed", "error": str(e)})
 
+#             # Re-init vertexai to correct project after each patient
+#             # (prevents MedGemma's aiplatform.init from polluting next embedding call)
+#             import vertexai
+#             vertexai.init(project=gcp_project, location=gcp_region)
+
 #         # Overall metrics
 #         n               = max(len(total_candidates), 1)
 #         avg_candidates  = round(sum(total_candidates) / n, 2)
@@ -543,6 +554,28 @@ if __name__ == "__main__":
 #             "avg_ood_trials_matched"  : avg_ood_matched,
 #             "success_rate"            : success_rate,
 #         })
+
+#         # ── Save and log per-run artifacts ────────────────────────────────
+#         run_summary = {
+#             "run_name"       : run_name,
+#             "config"         : {
+#                 "retrieval_top_k"      : retrieval_top_k,
+#                 "rerank_top_k"         : rerank_top_k,
+#                 "similarity_threshold" : similarity_threshold,
+#                 "varied_param"         : param_name,
+#             },
+#             "metrics"        : {
+#                 "avg_candidates" : avg_candidates,
+#                 "avg_matched"    : avg_matched,
+#                 "avg_ood_matched": avg_ood_matched,
+#                 "success_rate"   : success_rate,
+#             },
+#             "patient_results" : results,
+#             "timestamp"       : datetime.utcnow().isoformat(),
+#         }
+#         save_json(run_summary, os.path.join(run_results_dir, "run_summary.json"))
+#         save_json(results, os.path.join(run_results_dir, "patient_results.json"))
+#         mlflow.log_artifacts(run_results_dir, artifact_path=f"sensitivity/{run_name}")
 
 #         logger.info(f"\n  avg_candidates={avg_candidates} | avg_matched={avg_matched} | avg_ood={avg_ood_matched} | success={success_rate}")
 
@@ -613,11 +646,9 @@ if __name__ == "__main__":
 #             f"{r['success_rate']:>9}"
 #         )
 
-#     # Save summary
-#     os.makedirs("test_results", exist_ok=True)
-#     with open("test_results/sensitivity_results.json", "w") as f:
-#         json.dump(all_run_results, f, indent=2)
+#     # ── Save overall summary ───────────────────────────────────────────────────
+#     save_json(all_run_results, os.path.join(RESULTS_DIR, "sensitivity_summary.json"))
 
 #     print(f"\nAll runs logged to MLflow experiment: {MLFLOW_EXPERIMENT_NAME}")
-#     print(f"Results saved to: test_results/sensitivity_results.json")
-#     print(f"View in MLflow: mlflow ui --backend-store-uri sqlite:///mlflow.db")
+#     print(f"Results saved to: {RESULTS_DIR}")
+
