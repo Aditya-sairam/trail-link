@@ -94,7 +94,7 @@ RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "5"))
 CONDITIONS = ["diabetes", "breast_cancer"]
 
 # Guardrails
-GUARDRAIL_MODEL = os.getenv("GUARDRAIL_MODEL", "gemini-1.5-flash")
+GUARDRAIL_MODEL = os.getenv("GUARDRAIL_MODEL", "gemini-2.5-flash")
 ENABLE_INPUT_LLM_GUARDRAIL = os.getenv("ENABLE_INPUT_LLM_GUARDRAIL", "true").lower() == "true"
 ENABLE_OUTPUT_LLM_GUARDRAIL = os.getenv("ENABLE_OUTPUT_LLM_GUARDRAIL", "true").lower() == "true"
 MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "12000"))
@@ -226,20 +226,37 @@ def validate_input_structure(patient_summary: str) -> tuple[bool, str]:
 
 
 def get_guardrail_model() -> GenerativeModel:
+    vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
     return GenerativeModel(GUARDRAIL_MODEL)
 
 
 def extract_json_block(text: str) -> dict[str, Any]:
+    """
+    Safely extract JSON from model output.
+    """
+    if text is None:
+        raise ValueError("Model response text is None")
+
     text = text.strip()
+
+    if not text:
+        raise ValueError("Model response text is empty")
 
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
 
+    # Try direct JSON parse first
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Fallback: find first JSON object in text
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
-        raise ValueError("No JSON object found in model response")
+        raise ValueError(f"No JSON object found in model response: {text[:500]}")
 
     return json.loads(text[start:end + 1])
 
@@ -283,6 +300,7 @@ Rules:
 
 Return JSON only.
 """
+
     model = get_guardrail_model()
     response = model.generate_content(
         prompt,
@@ -292,7 +310,11 @@ Return JSON only.
             response_mime_type="application/json",
         ),
     )
-    result = extract_json_block(response.text)
+
+    raw_text = getattr(response, "text", None)
+    logger.info(f"Raw LLM input guardrail response: {repr(raw_text)[:800]}")
+
+    result = extract_json_block(raw_text)
 
     return {
         "is_valid": bool(result.get("is_valid", False)),
@@ -799,27 +821,36 @@ def rag_pipeline(patient_summary: str) -> dict:
         )
 
     # Step 0C: LLM input guardrail
+        # Step 0C: LLM input guardrail
     if ENABLE_INPUT_LLM_GUARDRAIL:
         logger.info("Step 0C: Running LLM input guardrail...")
-        input_judgment = llm_input_guardrail(patient_summary)
-        guardrail_meta["llm_input_judgment"] = input_judgment
-        logger.info(f"Input guardrail judgment: {input_judgment}")
+        try:
+            input_judgment = llm_input_guardrail(patient_summary)
+            guardrail_meta["llm_input_judgment"] = input_judgment
+            logger.info(f"Input guardrail judgment: {input_judgment}")
 
-        if not input_judgment["is_valid"]:
-            return safe_guardrail_response(
-                reason=input_judgment["reason"],
-                patient_summary=patient_summary,
-                guardrail_stage="input_llm_judge",
-                pii_hits=pii_hits,
-            )
+            if not input_judgment["is_valid"]:
+                return safe_guardrail_response(
+                    reason=input_judgment["reason"],
+                    patient_summary=patient_summary,
+                    guardrail_stage="input_llm_judge",
+                    pii_hits=pii_hits,
+                )
 
-        if input_judgment["category"] != "valid_supported_clinical_summary":
-            return safe_guardrail_response(
-                reason=input_judgment["reason"],
-                patient_summary=patient_summary,
-                guardrail_stage="input_scope",
-                pii_hits=pii_hits,
-            )
+            if input_judgment["category"] != "valid_supported_clinical_summary":
+                return safe_guardrail_response(
+                    reason=input_judgment["reason"],
+                    patient_summary=patient_summary,
+                    guardrail_stage="input_scope",
+                    pii_hits=pii_hits,
+                )
+
+        except Exception as e:
+            logger.warning(f"LLM input guardrail failed, continuing with structural checks only: {e}")
+            guardrail_meta["status"] = "flagged"
+            guardrail_meta["stage"] = "input_llm_judge_error"
+            guardrail_meta["reason"] = str(e)
+            guardrail_meta["flag_reasons"].append(f"input_llm_guardrail_error: {e}")
 
     # Step 1: Embed
     logger.info("Step 1: Embedding patient summary...")
@@ -904,26 +935,35 @@ def rag_pipeline(patient_summary: str) -> dict:
         )
 
     # Step 5C: LLM output judge
+        # Step 5C: LLM output judge
     if ENABLE_OUTPUT_LLM_GUARDRAIL:
         logger.info("Step 5C: Running LLM output guardrail...")
-        llm_output_judgment = llm_output_guardrail(
-            patient_summary=patient_summary,
-            recommendation=recommendation,
-            retrieved_trials=reranked_trials,
-        )
-        guardrail_meta["llm_output_judgment"] = llm_output_judgment
-        logger.info(f"Output guardrail judgment: {llm_output_judgment}")
-
-        if not (llm_output_judgment["is_safe"] and llm_output_judgment["is_grounded"]):
-            guardrail_meta["status"] = "flagged"
-            guardrail_meta["stage"] = "output_llm_judge"
-            guardrail_meta["reason"] = llm_output_judgment["reason"]
-            guardrail_meta["flag_reasons"].append(llm_output_judgment["reason"])
-            recommendation = (
-                "The generated recommendation did not pass final safety and grounding validation. "
-                "Please review the retrieved trials manually.\n\n"
-                f"{DISCLAIMER_TEXT}"
+        try:
+            llm_output_judgment = llm_output_guardrail(
+                patient_summary=patient_summary,
+                recommendation=recommendation,
+                retrieved_trials=reranked_trials,
             )
+            guardrail_meta["llm_output_judgment"] = llm_output_judgment
+            logger.info(f"Output guardrail judgment: {llm_output_judgment}")
+
+            if not (llm_output_judgment["is_safe"] and llm_output_judgment["is_grounded"]):
+                guardrail_meta["status"] = "flagged"
+                guardrail_meta["stage"] = "output_llm_judge"
+                guardrail_meta["reason"] = llm_output_judgment["reason"]
+                guardrail_meta["flag_reasons"].append(llm_output_judgment["reason"])
+                recommendation = (
+                    "The generated recommendation did not pass final safety and grounding validation. "
+                    "Please review the retrieved trials manually.\n\n"
+                    f"{DISCLAIMER_TEXT}"
+                )
+
+        except Exception as e:
+            logger.warning(f"LLM output guardrail failed, continuing with rule-based guardrails only: {e}")
+            guardrail_meta["status"] = "flagged"
+            guardrail_meta["stage"] = "output_llm_judge_error"
+            guardrail_meta["reason"] = str(e)
+            guardrail_meta["flag_reasons"].append(f"output_llm_guardrail_error: {e}")
 
     logger.info("RAG Pipeline complete")
     logger.info("=" * 60)
