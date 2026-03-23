@@ -59,7 +59,7 @@ jobs:
       - name: Deploy with Pulumi
         working-directory: ./infra
         run: pulumi up --yes 
-         env:
+        env:
           PULUMI_BACKEND_URL:  pulumi-state-mlops-test-project-486922
 
 
