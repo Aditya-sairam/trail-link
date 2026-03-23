@@ -28,8 +28,11 @@ permissions:
   contents: read
 
 jobs:
-  deploy-and-test:
-    name: Deploy + RAG Evaluation + Rollback on Failure
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 1: RAG Evaluation — validation, bias detection, rollback check
+  # ═══════════════════════════════════════════════════════════════════════════
+  rag-evaluation:
+    name: RAG Evaluation + Validation + Bias + Rollback
     runs-on: ubuntu-latest
 
     steps:
@@ -52,7 +55,6 @@ jobs:
           pip install \
             mlflow \
             databricks-sdk \
-            pulumi \
             google-cloud-aiplatform \
             google-cloud-firestore \
             google-cloud-discoveryengine \
@@ -62,26 +64,9 @@ jobs:
             python-dotenv \
             requests
 
-      # ── Login to GCS backend ──────────────────────────────────────────────
-      - name: Login to Pulumi GCS backend
-        run: pulumi login gs://pulumi-state-mlops-test-project-486922
-
-      # ── Snapshot state BEFORE deploy ──────────────────────────────────────
-      - name: Snapshot pre-deploy Pulumi state
-        working-directory: ./infra/pulumi_stacks
-        run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
-
-      # ── Deploy ────────────────────────────────────────────────────────────
-      - name: Deploy with Pulumi
-        working-directory: ./infra/pulumi_stacks
-        run: pulumi up --yes --stack dev
-
-      # ── Test ──────────────────────────────────────────────────────────────
-      - name: Run test_rag_pipeline.py
-        id: rag_test
+      - name: Run RAG pipeline evaluation
         run: python tests/test_rag_pipeline.py
 
-      # ── Upload test results (always, even on failure) ─────────────────────
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,30 +75,71 @@ jobs:
           path: tests/test_results/
           retention-days: 30
 
-      # ── Rollback if tests failed ──────────────────────────────────────────
-      - name: Rollback Pulumi deployment
-        if: failure() && steps.rag_test.outcome == 'failure'
-        working-directory: ./infra/pulumi_stacks
-        run: |
-          echo "🔄 Rolling back to pre-deploy state..."
-          pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
-          pulumi up --yes --stack dev
-          echo "✅ Rollback complete"
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 2: Deploy — only runs if evaluation passes
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy with Pulumi
+    runs-on: ubuntu-latest
+    needs: rag-evaluation
+    if: success()
 
-      # ── Alert: Create GitHub Issue on failure ─────────────────────────────
-      - name: Create GitHub Issue on failure
-        if: failure()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Pulumi
+        run: pip install pulumi
+
+      - name: Login to Pulumi GCS backend
+        run: pulumi login gs://pulumi-state-mlops-test-project-486922
+
+      - name: Deploy with Pulumi
+        working-directory: ./infra/pulumi_stacks
+        run: pulumi up --yes --stack dev
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Job 3: Alert on failure — GitHub Issue + @mention team
+  # ═══════════════════════════════════════════════════════════════════════════
+  alert-on-failure:
+    name: Create Alert on Failure
+    runs-on: ubuntu-latest
+    needs: [rag-evaluation, deploy]
+    if: always() && (needs.rag-evaluation.result == 'failure' || needs.deploy.result == 'failure')
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Create GitHub Issue
         uses: actions/github-script@v7
         env:
           DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
-          RAG_TEST_OUTCOME: ${{ steps.rag_test.outcome }}
+          EVAL_RESULT: ${{ needs.rag-evaluation.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
         with:
           script: |
-            const wasRollback = process.env.RAG_TEST_OUTCOME === 'failure';
+            const evalFailed   = process.env.EVAL_RESULT === 'failure';
+            const deployFailed = process.env.DEPLOY_RESULT === 'failure';
 
-            const title = wasRollback
-              ? `🔄 RAG Pipeline Failed + Rolled Back — ${context.sha.slice(0, 7)}`
-              : `🚨 RAG Pipeline CI Failed — ${context.sha.slice(0, 7)}`;
+            let failStage = '';
+            if (evalFailed) {
+              failStage = '❌ RAG Evaluation Failed — Deployment Blocked';
+            } else if (deployFailed) {
+              failStage = '❌ Pulumi Deployment Failed — Evaluation Passed';
+            }
+
+            const title = `🚨 ${failStage} — ${context.sha.slice(0, 7)}`;
 
             const body = [
               `## RAG Pipeline CI Failure`,
@@ -125,19 +151,33 @@ jobs:
               `| **Author** | @${context.actor} |`,
               `| **CI Run** | [View logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |`,
               `| **MLflow** | [View experiments](${process.env.DATABRICKS_HOST}/ml/experiments) |`,
-              `| **Rollback** | ${wasRollback ? '✅ Pulumi rolled back to previous state' : '⚠️ Failure occurred before or during deploy'} |`,
+              `| **Evaluation** | ${evalFailed ? '❌ Failed' : '✅ Passed'} |`,
+              `| **Deployment** | ${deployFailed ? '❌ Failed' : evalFailed ? '⛔ Blocked' : '✅ Passed'} |`,
               ``,
-              wasRollback ? `### 🔄 Automatic Rollback Executed` : `### ⛔ Deployment Failed`,
-              wasRollback
-                ? `The RAG evaluation failed after deployment. Pulumi has automatically rolled back to the pre-deploy state. The previous version is now live.`
-                : `The CI pipeline failed before the RAG evaluation step could complete.`,
-              ``,
-              `### Possible causes:`,
-              `- **Validation threshold failed** — success_rate or avg_matched below minimum`,
-              `- **Bias detected** — demographic slice performing significantly worse than average`,
-              `- **Rollback triggered** — performance degradation vs previous MLflow run`,
-              `- **Guardrail errors** — input/output guardrail failures`,
-              `- **Infrastructure error** — GCP auth, endpoint down, Firestore unreachable`,
+              evalFailed
+                ? [
+                    `### ⛔ Deployment Blocked — Evaluation Failed`,
+                    ``,
+                    `The RAG evaluation did not pass. Deployment was never attempted.`,
+                    ``,
+                    `**Possible causes:**`,
+                    `- **Validation threshold failed** — success_rate or avg_matched below minimum`,
+                    `- **Bias detected** — demographic slice performing significantly worse than average`,
+                    `- **Rollback triggered** — performance degradation vs previous MLflow run`,
+                    `- **Guardrail errors** — input/output guardrail failures`,
+                    `- **Infrastructure error** — GCP auth, endpoint down, Firestore unreachable`,
+                  ].join('\n')
+                : [
+                    `### ❌ Deployment Failed — Evaluation Passed`,
+                    ``,
+                    `The RAG evaluation passed all checks, but the Pulumi deployment failed.`,
+                    `The previous production version is still live (no rollback needed).`,
+                    ``,
+                    `**Possible causes:**`,
+                    `- IAM permission errors (service account missing roles)`,
+                    `- Pulumi state conflict`,
+                    `- GCP resource quota or API errors`,
+                  ].join('\n'),
               ``,
               `### Action required:`,
               `1. Check the [CI logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
@@ -156,10 +196,6 @@ jobs:
               labels: ['ci-failure', 'rag-pipeline'],
               assignees: [context.actor],
             });
-
-            console.log(`Issue created and assigned to ${context.actor}`);
-
-
 
 
 # name: TrialLink RAG Pipeline CI
