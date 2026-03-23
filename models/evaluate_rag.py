@@ -1,5 +1,3 @@
-# pipelines/dags/src/evaluate_rag.py
-
 """
 RAG Evaluation - LLM-as-Judge (Gemini 2.5 Flash)
 ================================================
@@ -21,6 +19,12 @@ Output:
   eval_results/
     patients/   {patient_id}_eval.json   - per-patient verdicts + scores
     summary.json                         - aggregate across all patients
+RAG Evaluation — LLM-as-Judge (Gemini 2.5 Flash)
+===================================================
+Same as before but now:
+  1. Writes summary.json to GCS after evaluation
+  2. Logs structured metrics so Cloud Logging can parse them
+  3. GCS write triggers Pub/Sub → Alert Cloud Function
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from datetime import datetime, timezone
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 from google.cloud import firestore
+from google.cloud import storage
 
 from models.rag_service import (
     rag_pipeline_for_patient,
@@ -50,14 +55,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config
-EVAL_PROJECT_ID   = os.getenv("EVAL_PROJECT_ID", "triallink-eval-001")
-EVAL_REGION       = os.getenv("EVAL_REGION", "us-central1")
-EVAL_MAX_PATIENTS = int(os.getenv("EVAL_MAX_PATIENTS", "5"))
-GEMINI_MODEL      = "gemini-2.5-flash"
+# ── Config ─────────────────────────────────────────────────────────────────────
+EVAL_PROJECT_ID    = os.getenv("EVAL_PROJECT_ID", GCP_PROJECT_ID)
+EVAL_REGION        = os.getenv("EVAL_REGION", "us-central1")
+EVAL_MAX_PATIENTS  = int(os.getenv("EVAL_MAX_PATIENTS", "5"))
+GEMINI_MODEL       = "gemini-2.5-flash"
+EVAL_BUCKET        = os.getenv("EVAL_BUCKET", "")  # GCS bucket for eval results
 
 OUTPUT_DIR         = "eval_results"
 PATIENT_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "patients")
+
+# ── Alert thresholds ───────────────────────────────────────────────────────────
+THRESHOLD_AVG_SCORE        = 3.0   # alert if avg overall score drops below this
+THRESHOLD_ELIGIBLE_PCT     = 0.30  # alert if <30% of verdicts are ELIGIBLE
+THRESHOLD_NOT_ELIGIBLE_PCT = 0.70  # alert if >70% of verdicts are NOT ELIGIBLE
+THRESHOLD_MIN_PATIENTS     = 3     # alert if fewer than 3 patients evaluated
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -93,7 +105,7 @@ Respond ONLY with valid JSON. No markdown, no extra text, no newlines inside str
       "title": "trial title here",
       "verdict": "ELIGIBLE or NOT ELIGIBLE or NEEDS REVIEW",
       "fitness_score": 1,
-      "reasoning": "One paragraph explaining why. Cite specific criteria and specific patient data.",
+      "reasoning": "One paragraph explaining why.",
       "key_matches": ["match 1", "match 2"],
       "key_concerns": ["concern 1"],
       "disqualifying_criterion": "exact exclusion criterion triggered, or empty string if none"
@@ -111,14 +123,12 @@ PATIENT PROFILE:
 TRIAL VERDICTS:
 {verdicts_block}
 
-Based on these verdicts, provide an overall assessment.
-
 Respond ONLY with valid JSON. No markdown, no extra text.
 
 {{
   "overall_score": 3,
   "top_trial": "NCT_ID_HERE",
-  "summary": "2-3 sentence summary of best match and overall recommendation quality.",
+  "summary": "2-3 sentence summary.",
   "score_reasoning": "Why this overall score was given."
 }}
 
@@ -132,11 +142,10 @@ Overall score guide (1-5):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
+# HELPERS (unchanged)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _clean(text: str, max_chars: int = 800) -> str:
-    """Strip newlines and quotes from text going into JSON string values."""
     if not text:
         return ""
     text = str(text).replace('"', "'").replace("\n", " ").replace("\r", " ")
@@ -167,7 +176,6 @@ def build_trials_block(trials: list[dict]) -> str:
 
 
 def build_verdicts_block(trials: list[dict]) -> str:
-    """Compact summary of per-trial verdicts for the overall prompt."""
     lines = []
     for t in trials:
         lines.append(
@@ -179,9 +187,7 @@ def build_verdicts_block(trials: list[dict]) -> str:
 
 def init_gemini() -> GenerativeModel:
     vertexai.init(project=EVAL_PROJECT_ID, location=EVAL_REGION)
-    model = GenerativeModel(GEMINI_MODEL)
-    logger.info(f"Gemini judge: {GEMINI_MODEL} on {EVAL_PROJECT_ID}/{EVAL_REGION}")
-    return model
+    return GenerativeModel(GEMINI_MODEL)
 
 
 def call_gemini(model: GenerativeModel, prompt: str, label: str) -> dict:
@@ -241,7 +247,7 @@ def extract_guardrail_reason(rag_result: dict) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# EVALUATION
+# EVALUATION (unchanged)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def evaluate_patient(
@@ -350,6 +356,87 @@ def evaluate_patient(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# THRESHOLD CHECK — runs after evaluation, before GCS upload
+# ══════════════════════════════════════════════════════════════════════════════
+
+def check_thresholds(summary: dict) -> list[dict]:
+    """
+    Check evaluation metrics against alert thresholds.
+    Returns a list of breached thresholds — empty list means all good.
+    Each breach is a dict with: metric, value, threshold, severity, message
+    """
+    breaches = []
+    avg_score = summary.get("average_overall_score")
+    verdicts  = summary.get("verdict_distribution", {})
+    evaluated = summary["evaluation_run"]["patients_evaluated"]
+
+    total_verdicts = sum(verdicts.values()) or 1  # avoid division by zero
+    eligible_pct     = verdicts.get("ELIGIBLE", 0) / total_verdicts
+    not_eligible_pct = verdicts.get("NOT ELIGIBLE", 0) / total_verdicts
+
+    # Check 1 — average score
+    if avg_score is not None and avg_score < THRESHOLD_AVG_SCORE:
+        breaches.append({
+            "metric"   : "average_overall_score",
+            "value"    : avg_score,
+            "threshold": THRESHOLD_AVG_SCORE,
+            "severity" : "HIGH" if avg_score < 2.0 else "MEDIUM",
+            "message"  : f"Average RAG quality score {avg_score}/5 is below threshold {THRESHOLD_AVG_SCORE}/5"
+        })
+
+    # Check 2 — eligible percentage too low
+    if eligible_pct < THRESHOLD_ELIGIBLE_PCT:
+        breaches.append({
+            "metric"   : "eligible_percentage",
+            "value"    : round(eligible_pct * 100, 1),
+            "threshold": THRESHOLD_ELIGIBLE_PCT * 100,
+            "severity" : "MEDIUM",
+            "message"  : f"Only {eligible_pct*100:.1f}% of trials marked ELIGIBLE — below {THRESHOLD_ELIGIBLE_PCT*100}% threshold"
+        })
+
+    # Check 3 — not eligible percentage too high
+    if not_eligible_pct > THRESHOLD_NOT_ELIGIBLE_PCT:
+        breaches.append({
+            "metric"   : "not_eligible_percentage",
+            "value"    : round(not_eligible_pct * 100, 1),
+            "threshold": THRESHOLD_NOT_ELIGIBLE_PCT * 100,
+            "severity" : "HIGH",
+            "message"  : f"{not_eligible_pct*100:.1f}% of trials marked NOT ELIGIBLE — vector search may be returning wrong trials"
+        })
+
+    # Check 4 — too few patients evaluated
+    if evaluated < THRESHOLD_MIN_PATIENTS:
+        breaches.append({
+            "metric"   : "patients_evaluated",
+            "value"    : evaluated,
+            "threshold": THRESHOLD_MIN_PATIENTS,
+            "severity" : "MEDIUM",
+            "message"  : f"Only {evaluated} patients evaluated — pipeline may have partially failed"
+        })
+
+    return breaches
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GCS UPLOAD — triggers Pub/Sub notification → Alert Cloud Function
+# ══════════════════════════════════════════════════════════════════════════════
+
+def upload_to_gcs(bucket_name: str, data: dict, gcs_path: str) -> None:
+    """Upload a dict as JSON to GCS."""
+    try:
+        client = storage.Client(project=GCP_PROJECT_ID)
+        bucket = client.bucket(bucket_name)
+        blob   = bucket.blob(gcs_path)
+        blob.upload_from_string(
+            json.dumps(data, indent=2, default=str),
+            content_type="application/json"
+        )
+        logger.info(f"Uploaded to gs://{bucket_name}/{gcs_path}")
+    except Exception as e:
+        logger.error(f"GCS upload failed: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -431,18 +518,13 @@ def main() -> None:
         logger.error("No patients found in Firestore. Exiting.")
         return
 
-    logger.info(f"Found {len(docs)} patients to evaluate.")
-
     patient_evals: list[dict] = []
-    failed: list[str] = []
+    failed: list[str]         = []
 
     for i, doc in enumerate(docs, 1):
         patient_id = doc.id
-        logger.info("")
-        logger.info(f"[{i}/{len(docs)}] Patient: {patient_id}")
-        logger.info("-" * 55)
+        logger.info(f"\n[{i}/{len(docs)}] Patient: {patient_id}")
 
-        # Run RAG
         try:
             logger.info("  Running guarded RAG pipeline...")
             rag_result = rag_pipeline_for_patient(patient_id)
@@ -459,7 +541,6 @@ def main() -> None:
             failed.append(patient_id)
             continue
 
-        # Evaluate
         try:
             eval_result = evaluate_patient(patient_id, rag_result, model)
         except Exception as e:
@@ -494,7 +575,7 @@ def main() -> None:
         logger.info(f"  Summary         : {overall.get('summary', '')}")
         logger.info(f"  Gemini calls    : {eval_result.get('gemini_calls', 0)}")
 
-        # Save
+        # Save locally
         out_path = os.path.join(PATIENT_OUTPUT_DIR, f"{patient_id}_eval.json")
         with open(out_path, "w") as f:
             json.dump(eval_result, f, indent=2, default=str)
@@ -503,13 +584,59 @@ def main() -> None:
         patient_evals.append(eval_result)
 
     # Summary
+
+        # Upload per-patient result to GCS
+        if EVAL_BUCKET:
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+            upload_to_gcs(
+                EVAL_BUCKET,
+                eval_result,
+                f"eval_results/{timestamp}/patients/{patient_id}_eval.json"
+            )
+
+        patient_evals.append(eval_result)
+
+    # ── Build summary ──────────────────────────────────────────────────────────
     summary = build_summary(patient_evals)
+
+    # ── Check thresholds ───────────────────────────────────────────────────────
+    breaches = check_thresholds(summary)
+    summary["alert_breaches"] = breaches
+    summary["alert_status"]   = "ALERT" if breaches else "OK"
+
+    # Log structured metrics so Cloud Logging can parse them
+    # These log lines are picked up by Cloud Logging metric filters
+    logger.info(f"EVAL_METRIC avg_overall_score={summary['average_overall_score']}")
+    logger.info(f"EVAL_METRIC patients_evaluated={summary['evaluation_run']['patients_evaluated']}")
+    logger.info(f"EVAL_METRIC alert_status={summary['alert_status']}")
+    logger.info(f"EVAL_METRIC breaches_count={len(breaches)}")
+
+    if breaches:
+        for b in breaches:
+            logger.warning(
+                f"THRESHOLD_BREACH metric={b['metric']} "
+                f"value={b['value']} threshold={b['threshold']} "
+                f"severity={b['severity']} message={b['message']}"
+            )
+
+    # Save summary locally
     summary_path = os.path.join(OUTPUT_DIR, "summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
-    logger.info("")
-    logger.info("=" * 65)
+    # Upload summary to GCS — this triggers the Pub/Sub notification
+    # which wakes up the Alert Cloud Function
+    if EVAL_BUCKET:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+        upload_to_gcs(
+            EVAL_BUCKET,
+            summary,
+            f"eval_results/{timestamp}/summary.json"  # ← GCS notification watches this path
+        )
+        logger.info("Summary uploaded to GCS — alert function will be triggered if thresholds breached")
+
+    # Print final summary
+    logger.info("\n" + "=" * 65)
     logger.info("EVALUATION SUMMARY")
     logger.info("=" * 65)
     logger.info(f"Patients evaluated   : {summary['evaluation_run']['patients_evaluated']}")
@@ -526,6 +653,14 @@ def main() -> None:
             f"(score {rec['score']}/5, guardrail={rec['guardrail_status']})"
         )
     logger.info(f"Summary saved        -> {summary_path}")
+    logger.info(f"Patients evaluated : {summary['evaluation_run']['patients_evaluated']}")
+    logger.info(f"Avg overall score  : {summary['average_overall_score']}/5")
+    logger.info(f"Verdict breakdown  : {summary['verdict_distribution']}")
+    logger.info(f"Alert status       : {summary['alert_status']}")
+    if breaches:
+        logger.warning(f"BREACHES DETECTED  : {len(breaches)}")
+        for b in breaches:
+            logger.warning(f"  [{b['severity']}] {b['message']}")
     logger.info("=" * 65)
 
 

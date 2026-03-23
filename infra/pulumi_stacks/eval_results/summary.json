@@ -1,0 +1,29 @@
+{
+  "evaluation_run": {
+    "timestamp": "2026-03-23T00:56:23.679439+00:00",
+    "gemini_model": "gemini-2.5-flash",
+    "eval_project": "mlops-test-project-486922",
+    "patients_evaluated": 0,
+    "gemini_calls_total": 0
+  },
+  "average_overall_score": null,
+  "verdict_distribution": {},
+  "top_recommendations": [],
+  "alert_breaches": [
+    {
+      "metric": "eligible_percentage",
+      "value": 0.0,
+      "threshold": 30.0,
+      "severity": "MEDIUM",
+      "message": "Only 0.0% of trials marked ELIGIBLE \u2014 below 30.0% threshold"
+    },
+    {
+      "metric": "patients_evaluated",
+      "value": 0,
+      "threshold": 3,
+      "severity": "MEDIUM",
+      "message": "Only 0 patients evaluated \u2014 pipeline may have partially failed"
+    }
+  ],
+  "alert_status": "ALERT"
+}
