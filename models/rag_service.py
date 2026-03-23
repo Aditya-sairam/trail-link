@@ -777,7 +777,7 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
         url = f"https://{dedicated_domain}/v1/projects/{project_number}/locations/{region}/endpoints/{endpoint_id}:predict"
 
         # ✅ Auth (same as gcloud access token)
-        credentials, _ = google.auth.default()
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
         credentials.refresh(Request())
 
         headers = {
