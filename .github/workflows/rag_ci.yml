@@ -17,6 +17,7 @@ env:
   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
   PULUMI_BACKEND_URL:        gs://pulumi-state-mlops-test-project-486922
+  PULUMI_CONFIG_PASSPHRASE:  ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
 
 jobs:
   deploy-and-test:
