@@ -165,7 +165,7 @@ def build_verdicts_block(trials: list[dict]) -> str:
 
 
 def init_gemini() -> GenerativeModel:
-    vertexai.init(project=EVAL_PROJECT_ID,location="global")
+    vertexai.init(project=EVAL_PROJECT_ID, location=EVAL_REGION)
     return GenerativeModel(GEMINI_MODEL)
 
 

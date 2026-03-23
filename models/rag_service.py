@@ -111,6 +111,12 @@ def run_rag_pipeline(cloud_event):
 
 def embed_text(text: str, task_type: str = "RETRIEVAL_QUERY") -> list[float]:
     try:
+        # Re-init with RAG project — evaluate_rag.py may have overridden vertexai
+        # with the eval project (triallink-eval-001) for Gemini calls.
+        vertexai.init(
+            project=GCP_PROJECT_ID,
+            location=os.getenv("GCP_REGION", "us-central1")
+        )
         model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL)
         inputs = [TextEmbeddingInput(text=text, task_type=task_type)]
         embeddings = model.get_embeddings(inputs)
@@ -324,20 +330,48 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
 ---"""
 
     try:
+        import google.auth
+        import google.auth.transport.requests
+        import requests as http_requests
+
         region = os.getenv("GCP_REGION", "us-central1")
-        aiplatform.init(project=MODEL_PROJECT_ID, location=region)
-        endpoint = aiplatform.Endpoint(
-            endpoint_name=f"projects/{MODEL_PROJECT_ID}/locations/{region}/endpoints/{MEDGEMMA_ENDPOINT_ID}"
+
+        # Dedicated endpoints must be called via their own domain,
+        # NOT through the shared aiplatform.googleapis.com domain.
+        dedicated_dns    = os.getenv("MEDGEMMA_DEDICATED_DNS")
+        model_project_num = os.getenv("MODEL_PROJECT_NUMBER", "408416535077")
+
+        # Full resource path required — dedicated DNS alone as host, full path in URL
+        url = (
+            f"https://{dedicated_dns}"
+            f"/v1/projects/{model_project_num}/locations/{region}"
+            f"/endpoints/{MEDGEMMA_ENDPOINT_ID}:predict"
         )
-        response = endpoint.predict(instances=[{
-            "@requestFormat": "chatCompletions",
-            "messages": [
-                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-                {"role": "user",   "content": [{"type": "text", "text": user_prompt}]}
-            ],
-            "max_tokens": 2048
-        }])
-        return response.predictions["choices"][0]["message"]["content"]
+
+        # Get ADC token
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        auth_req  = google.auth.transport.requests.Request()
+        creds.refresh(auth_req)
+
+        payload = {
+            "instances": [{
+                "@requestFormat": "chatCompletions",
+                "messages": [
+                    {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                    {"role": "user",   "content": [{"type": "text", "text": user_prompt}]}
+                ],
+                "max_tokens": 2048
+            }]
+        }
+
+        resp = http_requests.post(
+            url,
+            json=payload,
+            headers={"Authorization": f"Bearer {creds.token}"},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        return resp.json()["predictions"]["choices"][0]["message"]["content"]
     except Exception as e:
         logger.error(f"Recommendation generation failed: {e}")
         raise
