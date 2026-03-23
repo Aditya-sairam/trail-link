@@ -55,12 +55,12 @@ jobs:
 
       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
       - name: Snapshot pre-deploy Pulumi state
-        working-directory: ./infra
+        working-directory: ./infra/pulumi_stacks
         run: pulumi stack export > /tmp/pulumi_pre_deploy.json
 
       # ── Deploy ────────────────────────────────────────────────────────────
       - name: Deploy with Pulumi
-        working-directory: ./infra
+        working-directory: ./infra/pulumi_stacks
         run: pulumi up --yes
 
       # ── Test ──────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ jobs:
       # ── Rollback if tests failed ──────────────────────────────────────────
       - name: Rollback Pulumi deployment
         if: failure() && steps.rag_test.outcome == 'failure'
-        working-directory: ./infra
+        working-directory: ./infra/pulumi_stacks
         run: |
           echo "RAG tests failed — rolling back to pre-deploy state"
           echo "Commit : ${{ github.sha }}"
