@@ -41,7 +41,7 @@ from vertexai.generative_models import GenerativeModel, GenerationConfig
 from google.cloud import firestore
 from google.cloud import storage
 
-from models.rag_service import (
+from rag_service import (
     rag_pipeline_for_patient,
     GCP_PROJECT_ID,
     PATIENT_DB,
@@ -56,11 +56,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-EVAL_PROJECT_ID    = os.getenv("EVAL_PROJECT_ID", GCP_PROJECT_ID)
+EVAL_PROJECT_ID    = os.getenv("EVAL_PROJECT_ID", "triallink-eval-001")
 EVAL_REGION        = os.getenv("EVAL_REGION", "us-central1")
 EVAL_MAX_PATIENTS  = int(os.getenv("EVAL_MAX_PATIENTS", "5"))
 GEMINI_MODEL       = "gemini-2.5-flash"
-EVAL_BUCKET        = os.getenv("EVAL_BUCKET", "")  # GCS bucket for eval results
+EVAL_BUCKET        = os.getenv("EVAL_BUCKET", "triallink-eval-results-dev-mlops-test-project-486922")  # GCS bucket for eval results
 
 OUTPUT_DIR         = "eval_results"
 PATIENT_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "patients")
@@ -184,6 +184,24 @@ def build_verdicts_block(trials: list[dict]) -> str:
         )
     return "\n".join(lines)
 
+
+
+def new_call_to_gemini(prompt:str,label:str):
+    from google import genai
+    from google.genai import types
+    client = genai.Client(
+    vertexai=True, project=GCP_PROJECT_ID, location="global",
+    )
+    # If your image is stored in Google Cloud Storage, you can use the from_uri class method to create a Part object.
+    # IMAGE_URI = "gs://generativeai-downloads/images/scones.jpg"
+    model = "gemini-2.5-flash"
+    response = client.models.generate_content(
+    model=model,
+    contents=[
+      prompt
+    ],
+    )
+    print(response.text, end="")
 
 def init_gemini() -> GenerativeModel:
     vertexai.init(project=EVAL_PROJECT_ID, location=EVAL_REGION)
@@ -332,7 +350,7 @@ def evaluate_patient(
         ),
         label="Overall Assessment",
     )
-
+    logger.info(f"Overall raw response: {overall_raw}")
     return {
         "patient_id": patient_id,
         "patient_summary": patient_summary,

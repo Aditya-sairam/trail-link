@@ -1,0 +1,99 @@
+{
+  "patient_id": "e354328b-73fb-4343-a509-a1a310854cfb",
+  "patient_summary": "Patient is a 65-year-old female White. Active diagnoses: Housing unsatisfactory (finding), Educated to high school level (finding), Prediabetes (finding), Anemia (disorder), Chronic sinusitis (disorder), Has a criminal record (finding), Ischemic heart disease (disorder), Body mass index 30+ - obesity (finding), Abnormal findings diagnostic imaging heart+coronary circulat (finding), History of coronary artery bypass grafting (situation), Past pregnancy history of miscarriage (situation), Chronic pain (finding), Chronic low back pain (finding), Fibromyalgia (disorder), Medication review due (situation), Full-time employment (finding), Limited social contact (finding). Current medications: Clopidogrel 75 MG Oral Tablet, Simvastatin 20 MG Oral Tablet, 24 HR metoprolol succinate 100 MG Extended Release Oral Tablet, Nitroglycerin 0.4 MG/ACTUAT Mucosal Spray, Acetaminophen 325 MG Oral Tablet [Tylenol]. Recent procedures: Assessment of health and social care needs (procedure), Assessment using Morse Fall Scale (procedure), Depression screening (procedure). Known allergies: Allergic disposition (finding), Shellfish (substance). Smoking status: Never smoked tobacco (finding).",
+  "num_trials": 5,
+  "trial_verdicts": [
+    {
+      "nct_id": "NCT06864546",
+      "title": "A Participatory Approach to Support Glucose Tolerance Tracking in Real-Life of Patients With Type 2 Diabetes",
+      "verdict": "NOT ELIGIBLE",
+      "fitness_score": 0,
+      "reasoning": "The patient is not eligible for this trial because she does not meet the primary inclusion criterion of having a Type 2 Diabetes diagnosis, as she only has prediabetes. Furthermore, she triggers multiple exclusion criteria, including a history of symptomatic heart disease (ischemic heart disease, history of coronary bypass, and use of nitroglycerin for angina) and the use of a beta-blocker (metoprolol succinate), which significantly lowers heart rate.",
+      "key_matches": [
+        "Age (65 is between 40-70)"
+      ],
+      "key_concerns": [
+        "Patient has Prediabetes, not Type 2 Diabetes",
+        "No HbA1c value provided",
+        "No information on physical activity"
+      ],
+      "disqualifying_criterion": "Symptomatic heart disease, e.g. history of myocardial infarction, coronary bypass, stenting procedure, angina, or any ischemic cerebrovascular event; Use of a medication that significantly lowers heart rate (beta blockers, reserpine, guanethidine, methyldopa, clonidine, cimetidine, digitalis, calcium channel blockers, amiodarone, antiarrhythmic drugs, or lithium)"
+    },
+    {
+      "nct_id": "NCT06374277",
+      "title": "Pharmacy-led Transitions of Care Intervention to Improve Medication Adherence",
+      "verdict": "NEEDS REVIEW",
+      "fitness_score": 0,
+      "reasoning": "The patient meets the age requirement and has multiple chronic conditions (Ischemic heart disease, Prediabetes, Obesity) and is on multiple chronic medications (Clopidogrel, Simvastatin, Metoprolol, Nitroglycerin) which align with the inclusion criteria. However, critical information regarding the patient's insurance status (Medicaid or uninsured, and not Medicare/Medicaid dual eligible) and whether they are an inpatient receiving medications from a hospital pharmacy is missing. Without this information, a definitive eligibility determination cannot be made.",
+      "key_matches": [
+        "Age (65 is >=21)",
+        "Multiple chronic conditions (Ischemic heart disease, Prediabetes, Obesity)",
+        "Multiple chronic medications (Clopidogrel, Simvastatin, Metoprolol, Nitroglycerin)"
+      ],
+      "key_concerns": [
+        "Missing information on insurance status (Medicaid/uninsured, not dual eligible)",
+        "Missing information on inpatient status",
+        "Missing information on source of chronic medications (hospital pharmacy)"
+      ],
+      "disqualifying_criterion": ""
+    },
+    {
+      "nct_id": "NCT01399385",
+      "title": "New Heart Imaging Techniques to Evaluate Possible Heart Disease",
+      "verdict": "ELIGIBLE",
+      "fitness_score": 1,
+      "reasoning": "The patient is eligible for this trial as she meets the age requirement (65 years old, within 18-100 years) and clearly fits the broad inclusion criteria for subjects with a history of cardiovascular diseases and atherosclerotic disease. Her profile includes ischemic heart disease, a history of coronary artery bypass grafting, abnormal findings on cardiac imaging, obesity, and prediabetes, all of which are explicitly mentioned or implied as qualifying conditions or risk factors for atherosclerosis. No exclusion criteria are provided in the trial description.",
+      "key_matches": [
+        "Age (65 is between 18-100)",
+        "History of cardiovascular diseases (Ischemic heart disease, History of coronary artery bypass grafting)",
+        "Known or suspected atherosclerotic disease (Ischemic heart disease, Abnormal findings diagnostic imaging heart+coronary circulat)",
+        "Risk factors for atherosclerosis (Obesity, Prediabetes)"
+      ],
+      "key_concerns": [],
+      "disqualifying_criterion": ""
+    },
+    {
+      "nct_id": "NCT05955339",
+      "title": "Comparing Healthcare Visit Recording and Open Notes to Improve Chronic iLlness Care Experience in Older Adults",
+      "verdict": "NOT ELIGIBLE",
+      "fitness_score": 0,
+      "reasoning": "The patient is not eligible for this trial because she does not meet the primary multimorbidity inclusion criterion. While she is 65 years old and has 'Ischemic heart disease' (heart disease) and implied hyperlipidemia (on Simvastatin), she only has 'Prediabetes' and not 'Diabetes Mellitus' or 'Hypertension' as required for the initial part of the multimorbidity definition ('diabetes or hypertension plus one of the following').",
+      "key_matches": [
+        "Age (65 is >=65)",
+        "Has 'Heart disease' (Ischemic heart disease)"
+      ],
+      "key_concerns": [
+        "Patient has 'Prediabetes' not 'Diabetes Mellitus' or 'Hypertension'",
+        "Missing information on clinic visits, ongoing care, vision/hearing, and past recording of visits",
+        "Incomplete exclusion criteria provided"
+      ],
+      "disqualifying_criterion": "With multimorbidity (diabetes or hypertension plus one of the following: arthritis (osteoarthritis and rheumatoid arthritis), asthma, atrial fibrillation, Alzheimer's disease and related dementia (not severe), cancer, chronic obstructive pulmonary disease, depression, heart disease, heart failure, hyperlipidemia, osteoporosis, kidney disease and stroke. Patients with diabetes plus hypertension are eligible."
+    },
+    {
+      "nct_id": "NCT02590822",
+      "title": "Diabetes Interventional Assessment of Slimming or Training to Lessen Inconspicuous Cardiovascular Dysfunction",
+      "verdict": "NOT ELIGIBLE",
+      "fitness_score": 0,
+      "reasoning": "The patient is not eligible for this trial because she does not meet the primary inclusion criterion of having established Type 2 Diabetes (T2DM). Her diagnosis is 'Prediabetes,' which is distinct from T2DM. Several other inclusion criteria specifically refer to T2DM diagnosis, duration, and glucose-lowering therapies, none of which apply to the patient's prediabetes status.",
+      "key_matches": [
+        "Age (65 is <=65)",
+        "BMI (>30)"
+      ],
+      "key_concerns": [
+        "Patient has 'Prediabetes' not 'Established T2DM'",
+        "No HbA1c value provided",
+        "Not on glucose lowering therapy"
+      ],
+      "disqualifying_criterion": "Established T2DM (\u22653months)"
+    }
+  ],
+  "overall": {
+    "score": 3,
+    "top_trial": "NCT01399385",
+    "summary": "The patient is eligible for NCT01399385 as no disqualifiers were identified, and NCT06374277 also has no listed disqualifiers but requires further review. However, the patient is not eligible for NCT06864546 due to ischemic heart disease and beta-blocker use, and NCT05955339 due to multimorbidity. The verdict for NCT02590822 appears incorrect, as the patient has prediabetes, not established T2DM.",
+    "score_reasoning": "The overall score of 3 is given because one trial (NCT01399385) is explicitly marked eligible, and another (NCT06374277) is marked 'needs review' with no listed disqualifiers, suggesting potential eligibility. However, the verdict for NCT02590822 appears to be incorrect, as the patient's prediabetes status does not meet the 'established T2DM' exclusion criterion, indicating a reasoning gap in the provided verdicts.",
+    "error": null
+  },
+  "gemini_calls": 2,
+  "evaluated_at": "2026-03-23T17:32:36.773851+00:00"
+}

@@ -132,7 +132,7 @@ class DataPipelineStack:
             model_config={
                 "accept_eula": True,
             },
-           )
+        )
 
     def _keep_alive_ping_for_airflow(self):
         return gcp.cloudscheduler.Job(

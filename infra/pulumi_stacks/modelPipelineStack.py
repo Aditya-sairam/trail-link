@@ -15,7 +15,7 @@ class ModelPipelineStack:
         self.project_id = project_id
         self.region = region
         self.opts = opts or pulumi.ResourceOptions()
-
+        self.model = self._deploy_gemini_model()
         self.service_account      = self._create_service_account()
         self.function_bucket      = self._create_function_bucket()
         self.eval_bucket          = self._create_eval_bucket()
@@ -52,6 +52,16 @@ class ModelPipelineStack:
             "patient-rag-requests",
             name="clinical-trial-suggestions-request",
             project=self.project_id,
+        )
+
+       ### Trying to deploy gemini flash:
+    def _deploy_gemini_model(self):
+        return gcp.vertex.AiEndpointWithModelGardenDeployment("deploy",
+              publisher_model_name="publishers/google/models/medgemma@medgemma-4b-it",
+            location=self.region,
+            model_config={
+                "accept_eula": True,
+            },
         )
 
     def _create_eval_notification_topic(self):
@@ -114,8 +124,8 @@ class ModelPipelineStack:
                 "service_account_email": self.service_account.email,
                 "environment_variables": {
                     "GCP_PROJECT_ID"        : self.project_id,
-                    "MODEL_PROJECT_ID"      : self.project_id,
-                    "MEDGEMMA_ENDPOINT_ID"  : "mg-endpoint-783bd401-236f-4b07-94ef-7da7cde4c49b",
+                    "MODEL_PROJECT_ID"      : self.model.project,
+                    "MEDGEMMA_ENDPOINT_ID"  : self.model.endpoint,
                     "GOOGLE_FUNCTION_SOURCE": "rag_service.py",
                     "EVAL_BUCKET"           : f"triallink-eval-results-{self.name}-{self.project_id}",
                 }

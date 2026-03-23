@@ -38,7 +38,7 @@ REGION          = os.getenv("GCP_REGION", "us-central1")
 INDEX_ID        = os.getenv("VECTOR_SEARCH_INDEX_ID", "")
 FIRESTORE_DB    = os.getenv("FIRESTORE_DATABASE", "clinical-trials-db")
 
-EMBEDDING_MODEL = "text-embedding-005"
+EMBEDDING_MODEL = "text-embedding-005" 
 TASK_TYPE       = "RETRIEVAL_DOCUMENT"
 BATCH_SIZE      = 20   # reduced — 20 chunks * ~900 tokens = ~18k tokens, safely under 20k limit
 SLEEP_SECS      = 1.0

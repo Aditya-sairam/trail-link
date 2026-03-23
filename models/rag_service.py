@@ -85,7 +85,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-474e313a-c84c-492e-a167-c9220502a499",
+    "mg-endpoint-f1cff658-4c32-4ffb-95eb-4a5b4eade528",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
@@ -695,10 +695,12 @@ def rerank_trials(
 # STEP 4 — GENERATE RECOMMENDATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-def generate_recommendation(
-    patient_summary: str,
-    retrieved_trials: list[dict],
-) -> str:
+import os
+import requests
+import google.auth
+from google.auth.transport.requests import Request
+
+def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) -> str:
     context = "\n\n".join([
         f"Trial {i + 1}:\n"
         f"  NCT ID        : {t.get('nct_number', 'N/A')}\n"
@@ -716,7 +718,6 @@ def generate_recommendation(
         f"  URL           : {t.get('study_url', 'N/A')}"
         for i, t in enumerate(retrieved_trials)
     ])
-
     system_prompt = (
         "You are a clinical trial matching specialist for TrialLink. "
         "Use only the provided patient profile and retrieved clinical trial context. "
@@ -759,51 +760,58 @@ Intervention Summary: [what the patient would undergo if enrolled]
 Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or disqualification]
 ---"""
 
+    prompt = system_prompt+user_prompt
+
     try:
         import google.auth
         import google.auth.transport.requests
         import requests as http_requests
 
         region = os.getenv("GCP_REGION", "us-central1")
+        project_number = "903943936563" 
+        endpoint_id = MEDGEMMA_ENDPOINT_ID
 
-        # Dedicated endpoints must be called via their own domain,
-        # NOT through the shared aiplatform.googleapis.com domain.
-        dedicated_dns    = os.getenv("MEDGEMMA_DEDICATED_DNS")
-        model_project_num = os.getenv("MODEL_PROJECT_NUMBER", "408416535077")
+        # ✅ Dedicated domain (MANDATORY)
+        dedicated_domain = f"{endpoint_id}.{region}-{project_number}.prediction.vertexai.goog"
 
-        # Full resource path required — dedicated DNS alone as host, full path in URL
-        url = (
-            f"https://{dedicated_dns}"
-            f"/v1/projects/{model_project_num}/locations/{region}"
-            f"/endpoints/{MEDGEMMA_ENDPOINT_ID}:predict"
-        )
+        url = f"https://{dedicated_domain}/v1/projects/{project_number}/locations/{region}/endpoints/{endpoint_id}:predict"
 
-        # Get ADC token
-        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        auth_req  = google.auth.transport.requests.Request()
-        creds.refresh(auth_req)
+        # ✅ Auth (same as gcloud access token)
+        credentials, _ = google.auth.default()
+        credentials.refresh(Request())
 
-        payload = {
-            "instances": [{
-                "@requestFormat": "chatCompletions",
-                "messages": [
-                    {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-                    {"role": "user",   "content": [{"type": "text", "text": user_prompt}]}
-                ],
-                "max_tokens": 2048
-            }]
+        headers = {
+            "Authorization": f"Bearer {credentials.token}",
+            "Content-Type": "application/json"
         }
 
-        resp = http_requests.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {creds.token}"},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        return resp.json()["predictions"]["choices"][0]["message"]["content"]
+        # ✅ Correct MedGemma payload
+        payload = {
+            "instances": [
+                {
+                    "prompt": prompt,
+                    "max_tokens": 400,
+                    "temperature": 0.2
+                }
+            ]
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+
+        result = response.json()["predictions"][0]
+
+    # Case 1: result is a dict
+        if isinstance(result, dict):
+            return result.get("generated_text") or result.get("output") or str(result)
+
+        # Case 2: result is already a string (YOUR CASE)
+        elif isinstance(result, str):
+            return result
+
+# Fallback
+        return str(result)
     except Exception as e:
-        logger.error(f"Recommendation generation failed: {e}")
+        logger.error(f"MedGemma generation failed: {e}")
         raise
 
 
