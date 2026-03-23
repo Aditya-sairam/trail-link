@@ -155,3 +155,7 @@ functions-framework==3.*
 flask
 google-cloud-discoveryengine==0.17.0
 numpy==2.4.3
+google-cloud-firestore
+google-cloud-discoveryengine
+google-cloud-aiplatform
+functions-framework

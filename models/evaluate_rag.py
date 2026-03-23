@@ -1,17 +1,16 @@
 # pipelines/dags/src/evaluate_rag.py
 
 """
-RAG Evaluation — LLM-as-Judge (Gemini 2.5 Flash)
-===================================================
-Evaluates the 5 trials recommended by MedGemma for each patient.
-Uses exactly 2 Gemini calls per patient:
+RAG Evaluation - LLM-as-Judge (Gemini 2.5 Flash)
+================================================
+Evaluates the trials recommended by the TrialLink RAG pipeline.
 
-  Call 1 — Per-Trial Verdict
-      For each of the 5 reranked trials: checks patient profile vs
-      eligibility criteria and produces a verdict + reasoning per trial.
-
-  Call 2 — Overall Assessment
-      Aggregate quality score + best trial recommendation + summary.
+Pipeline per patient:
+  1. Run guarded RAG pipeline via rag_pipeline_for_patient()
+  2. If guardrails block the case, skip Gemini evaluation
+  3. If guardrails allow the case and reranked trials exist:
+       Call 1 - Per-Trial Verdict
+       Call 2 - Overall Assessment
 
 Env vars (same as rag_service.py, plus):
   EVAL_PROJECT_ID     GCP project with Vertex AI / Gemini enabled
@@ -20,8 +19,8 @@ Env vars (same as rag_service.py, plus):
 
 Output:
   eval_results/
-    patients/   {patient_id}_eval.json   — per-patient verdicts + scores
-    summary.json                         — aggregate across all patients
+    patients/   {patient_id}_eval.json   - per-patient verdicts + scores
+    summary.json                         - aggregate across all patients
 """
 
 from __future__ import annotations
@@ -35,16 +34,15 @@ from datetime import datetime, timezone
 
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
+from google.cloud import firestore
 
-sys.path.insert(0, os.path.dirname(__file__))
-from rag_service import (
+from models.rag_service import (
     rag_pipeline_for_patient,
     GCP_PROJECT_ID,
     PATIENT_DB,
 )
-from google.cloud import firestore
 
-# ── Logging ────────────────────────────────────────────────────────────────────
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -52,7 +50,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# Config
 EVAL_PROJECT_ID   = os.getenv("EVAL_PROJECT_ID", "triallink-eval-001")
 EVAL_REGION       = os.getenv("EVAL_REGION", "us-central1")
 EVAL_MAX_PATIENTS = int(os.getenv("EVAL_MAX_PATIENTS", "5"))
@@ -63,26 +61,25 @@ PATIENT_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "patients")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROMPTS  (2 total per patient)
+# PROMPTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Call 1 — verdict + reasoning for each of the 5 trials
 PER_TRIAL_PROMPT = """\
 You are a clinical trial eligibility reviewer.
 
 PATIENT PROFILE:
 {patient_summary}
 
-You must evaluate the following 5 clinical trials against this patient profile.
+You must evaluate the following clinical trials against this patient profile.
 For each trial check:
   - Does the patient meet ALL inclusion criteria? (age, sex, diagnosis, lab values, etc.)
   - Does the patient trigger ANY exclusion criterion? (prior procedures, medications, comorbidities, etc.)
   - Do current medications or allergies conflict with the trial?
 
 Verdict options:
-  ELIGIBLE       — patient meets all inclusion criteria and triggers no exclusion criteria
-  NOT ELIGIBLE   — patient triggers at least one hard exclusion criterion (name it)
-  NEEDS REVIEW   — eligibility is ambiguous or requires clinical judgment on borderline criteria
+  ELIGIBLE       - patient meets all inclusion criteria and triggers no exclusion criteria
+  NOT ELIGIBLE   - patient triggers at least one hard exclusion criterion (name it)
+  NEEDS REVIEW   - eligibility is ambiguous or requires clinical judgment on borderline criteria
 
 TRIALS TO EVALUATE:
 {trials_block}
@@ -105,7 +102,6 @@ Respond ONLY with valid JSON. No markdown, no extra text, no newlines inside str
 }}
 """
 
-# Call 2 — overall quality score + best pick
 OVERALL_PROMPT = """\
 You are a clinical research director reviewing a set of trial eligibility verdicts.
 
@@ -127,11 +123,11 @@ Respond ONLY with valid JSON. No markdown, no extra text.
 }}
 
 Overall score guide (1-5):
-  5 — Multiple strong eligible matches, reasoning is clinically precise
-  4 — At least one clear eligible match, minor gaps in reasoning
-  3 — Partial matches or borderline eligibility, some reasoning gaps
-  2 — Mostly ineligible or significant reasoning errors
-  1 — All ineligible or critically flawed assessment
+  5 - Multiple strong eligible matches, reasoning is clinically precise
+  4 - At least one clear eligible match, minor gaps in reasoning
+  3 - Partial matches or borderline eligibility, some reasoning gaps
+  2 - Mostly ineligible or significant reasoning errors
+  1 - All ineligible or critically flawed assessment
 """
 
 
@@ -148,17 +144,17 @@ def _clean(text: str, max_chars: int = 800) -> str:
 
 
 def build_trials_block(trials: list[dict]) -> str:
-    """Format top-5 trials as a plain numbered block for the prompt."""
+    """Format reranked trials as a plain numbered block for the prompt."""
     blocks = []
     for i, t in enumerate(trials, 1):
-        nct   = t.get("nct_number") or t.get("_doc_id", "UNKNOWN")
+        nct = t.get("nct_number") or t.get("_doc_id", "UNKNOWN")
         title = _clean(t.get("study_title") or t.get("title", ""), 120)
-        cond  = _clean(t.get("conditions", ""), 200)
-        elig  = _clean(t.get("eligibility_criteria", ""), 800)
+        cond = _clean(t.get("conditions", ""), 200)
+        elig = _clean(t.get("eligibility_criteria", ""), 800)
         age_min = t.get("min_age", "N/A")
         age_max = t.get("max_age", "N/A")
-        sex     = t.get("sex", "N/A")
-        status  = t.get("recruitment_status", "N/A")
+        sex = t.get("sex", "N/A")
+        status = t.get("recruitment_status", "N/A")
 
         blocks.append(
             f"TRIAL {i}: {nct}\n"
@@ -190,7 +186,7 @@ def init_gemini() -> GenerativeModel:
 
 def call_gemini(model: GenerativeModel, prompt: str, label: str) -> dict:
     """Send prompt to Gemini, parse JSON, return dict."""
-    logger.info(f"  Gemini call → {label}")
+    logger.info(f"  Gemini call -> {label}")
     try:
         response = model.generate_content(
             prompt,
@@ -208,11 +204,40 @@ def call_gemini(model: GenerativeModel, prompt: str, label: str) -> dict:
             raw = match.group(0)
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        logger.error(f"  {label}: JSON parse error — {e}")
+        logger.error(f"  {label}: JSON parse error - {e}")
         return {"error": str(e)}
     except Exception as e:
-        logger.error(f"  {label}: Gemini call failed — {e}")
+        logger.error(f"  {label}: Gemini call failed - {e}")
         return {"error": str(e)}
+
+
+def infer_guardrail_status(rag_result: dict) -> str:
+    """
+    Infer a normalized guardrail status from the RAG result.
+    """
+    guardrail = rag_result.get("guardrail", {}) or {}
+    recommendation = str(rag_result.get("recommendation", ""))
+
+    if guardrail.get("status") == "blocked":
+        return "blocked"
+
+    if recommendation.startswith("Guardrail triggered at"):
+        return "blocked"
+
+    if "did not pass" in recommendation.lower():
+        return "flagged"
+
+    if guardrail.get("status") == "passed":
+        return "passed"
+
+    return "unknown"
+
+
+def extract_guardrail_reason(rag_result: dict) -> str:
+    guardrail = rag_result.get("guardrail", {}) or {}
+    if isinstance(guardrail, dict):
+        return str(guardrail.get("reason", "")) or str(guardrail.get("stage", ""))
+    return ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -225,16 +250,63 @@ def evaluate_patient(
     model: GenerativeModel,
 ) -> dict:
     """
-    Run 2 Gemini calls for one patient:
-      1. Per-trial verdicts for the 5 reranked trials
-      2. Overall quality score + best recommendation
+    Run Gemini evaluation for one patient unless guardrails blocked the case.
     """
-    patient_summary = rag_result["patient_summary"]
-    trials          = rag_result.get("retrieved_trials", [])
+    patient_summary = rag_result.get("patient_summary", "")
+    trials = rag_result.get("retrieved_trials", [])
+    guardrail = rag_result.get("guardrail", {}) or {}
+    guardrail_status = infer_guardrail_status(rag_result)
+    guardrail_reason = extract_guardrail_reason(rag_result)
 
-    # ── Call 1: per-trial verdicts ─────────────────────────────────────────────
-    trials_block   = build_trials_block(trials)
-    per_trial_raw  = call_gemini(
+    # Skip Gemini evaluation if blocked by guardrails
+    if guardrail_status == "blocked":
+        return {
+            "patient_id": patient_id,
+            "patient_summary": patient_summary,
+            "num_trials": 0,
+            "trial_verdicts": [],
+            "guardrail": {
+                "status": guardrail_status,
+                "reason": guardrail_reason,
+                **guardrail,
+            },
+            "overall": {
+                "score": None,
+                "top_trial": "",
+                "summary": "Evaluation skipped because the case was blocked by guardrails.",
+                "score_reasoning": guardrail_reason or "Blocked before evaluation.",
+                "error": None,
+            },
+            "gemini_calls": 0,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Skip Gemini evaluation if there are no trials to assess
+    if not trials:
+        return {
+            "patient_id": patient_id,
+            "patient_summary": patient_summary,
+            "num_trials": 0,
+            "trial_verdicts": [],
+            "guardrail": {
+                "status": guardrail_status,
+                "reason": guardrail_reason,
+                **guardrail,
+            },
+            "overall": {
+                "score": None,
+                "top_trial": "",
+                "summary": "No retrieved trials available for evaluation.",
+                "score_reasoning": "RAG produced zero reranked trials.",
+                "error": None,
+            },
+            "gemini_calls": 0,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Call 1: per-trial verdicts
+    trials_block = build_trials_block(trials)
+    per_trial_raw = call_gemini(
         model,
         PER_TRIAL_PROMPT.format(
             patient_summary=patient_summary,
@@ -244,12 +316,8 @@ def evaluate_patient(
     )
     trial_verdicts = per_trial_raw.get("trials", [])
 
-    # ── Call 2: overall assessment ─────────────────────────────────────────────
-    if trial_verdicts:
-        verdicts_block = build_verdicts_block(trial_verdicts)
-    else:
-        verdicts_block = "No trial verdicts available."
-
+    # Call 2: overall assessment
+    verdicts_block = build_verdicts_block(trial_verdicts) if trial_verdicts else "No trial verdicts available."
     overall_raw = call_gemini(
         model,
         OVERALL_PROMPT.format(
@@ -260,19 +328,24 @@ def evaluate_patient(
     )
 
     return {
-        "patient_id"     : patient_id,
+        "patient_id": patient_id,
         "patient_summary": patient_summary,
-        "num_trials"     : len(trials),
-        "trial_verdicts" : trial_verdicts,
-        "overall": {
-            "score"          : overall_raw.get("overall_score"),
-            "top_trial"      : overall_raw.get("top_trial", ""),
-            "summary"        : overall_raw.get("summary", ""),
-            "score_reasoning": overall_raw.get("score_reasoning", ""),
-            "error"          : overall_raw.get("error"),
+        "num_trials": len(trials),
+        "trial_verdicts": trial_verdicts,
+        "guardrail": {
+            "status": guardrail_status,
+            "reason": guardrail_reason,
+            **guardrail,
         },
-        "gemini_calls" : 2,
-        "evaluated_at" : datetime.now(timezone.utc).isoformat(),
+        "overall": {
+            "score": overall_raw.get("overall_score"),
+            "top_trial": overall_raw.get("top_trial", ""),
+            "summary": overall_raw.get("summary", ""),
+            "score_reasoning": overall_raw.get("score_reasoning", ""),
+            "error": overall_raw.get("error"),
+        },
+        "gemini_calls": 2,
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -291,24 +364,34 @@ def build_summary(patient_evals: list[dict]) -> dict:
     verdict_counts: dict[str, int] = {}
     for e in patient_evals:
         for t in e.get("trial_verdicts", []):
-            v = t.get("verdict", "UNKNOWN")
-            verdict_counts[v] = verdict_counts.get(v, 0) + 1
+            verdict = t.get("verdict", "UNKNOWN")
+            verdict_counts[verdict] = verdict_counts.get(verdict, 0) + 1
+
+    guardrail_status_counts: dict[str, int] = {}
+    for e in patient_evals:
+        g = e.get("guardrail", {}) or {}
+        status = g.get("status", "unknown")
+        guardrail_status_counts[status] = guardrail_status_counts.get(status, 0) + 1
+
+    total_gemini_calls = sum(int(e.get("gemini_calls", 0)) for e in patient_evals)
 
     return {
         "evaluation_run": {
-            "timestamp"         : datetime.now(timezone.utc).isoformat(),
-            "gemini_model"      : GEMINI_MODEL,
-            "eval_project"      : EVAL_PROJECT_ID,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "gemini_model": GEMINI_MODEL,
+            "eval_project": EVAL_PROJECT_ID,
             "patients_evaluated": len(patient_evals),
-            "gemini_calls_total": len(patient_evals) * 2,
+            "gemini_calls_total": total_gemini_calls,
         },
         "average_overall_score": avg_score,
-        "verdict_distribution" : verdict_counts,
-        "top_recommendations"  : [
+        "verdict_distribution": verdict_counts,
+        "guardrail_status_distribution": guardrail_status_counts,
+        "top_recommendations": [
             {
                 "patient_id": e["patient_id"],
-                "top_trial" : e["overall"].get("top_trial", "N/A"),
-                "score"     : e["overall"].get("score"),
+                "top_trial": e["overall"].get("top_trial", "N/A"),
+                "score": e["overall"].get("score"),
+                "guardrail_status": (e.get("guardrail", {}) or {}).get("status", "unknown"),
             }
             for e in patient_evals
         ],
@@ -320,7 +403,7 @@ def build_summary(patient_evals: list[dict]) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 VERDICT_ICON = {
-    "ELIGIBLE"    : "✅",
+    "ELIGIBLE": "✅",
     "NOT ELIGIBLE": "❌",
     "NEEDS REVIEW": "⚠️ ",
 }
@@ -328,13 +411,12 @@ VERDICT_ICON = {
 
 def main() -> None:
     logger.info("=" * 65)
-    logger.info("TrialLink RAG Evaluation — LLM-as-Judge (Gemini)")
+    logger.info("TrialLink RAG Evaluation - LLM-as-Judge (Gemini)")
     logger.info("=" * 65)
     logger.info(f"Eval project  : {EVAL_PROJECT_ID}")
     logger.info(f"Gemini model  : {GEMINI_MODEL}")
     logger.info(f"RAG project   : {GCP_PROJECT_ID}")
     logger.info(f"Max patients  : {EVAL_MAX_PATIENTS}")
-    logger.info(f"Gemini calls  : {EVAL_MAX_PATIENTS * 2} total")
     logger.info("=" * 65)
 
     os.makedirs(PATIENT_OUTPUT_DIR, exist_ok=True)
@@ -342,7 +424,7 @@ def main() -> None:
     model = init_gemini()
 
     logger.info(f"Fetching up to {EVAL_MAX_PATIENTS} patients from Firestore ({PATIENT_DB})...")
-    db   = firestore.Client(project=GCP_PROJECT_ID, database=PATIENT_DB)
+    db = firestore.Client(project=GCP_PROJECT_ID, database=PATIENT_DB)
     docs = list(db.collection("patients").limit(EVAL_MAX_PATIENTS).stream())
 
     if not docs:
@@ -362,12 +444,15 @@ def main() -> None:
 
         # Run RAG
         try:
-            logger.info("  Running RAG pipeline...")
+            logger.info("  Running guarded RAG pipeline...")
             rag_result = rag_pipeline_for_patient(patient_id)
+
+            guardrail_status = infer_guardrail_status(rag_result)
             logger.info(
-                f"  RAG complete — "
+                f"  RAG complete - "
                 f"{len(rag_result.get('candidates_before_rerank', []))} candidates, "
-                f"{len(rag_result.get('retrieved_trials', []))} reranked"
+                f"{len(rag_result.get('retrieved_trials', []))} reranked, "
+                f"guardrail={guardrail_status}"
             )
         except Exception as e:
             logger.error(f"  RAG failed: {e}")
@@ -382,32 +467,42 @@ def main() -> None:
             failed.append(patient_id)
             continue
 
-        # ── Print per-trial table ──────────────────────────────────────────────
-        logger.info("  ── Trial Verdicts ────────────────────────────────────")
-        for t in eval_result.get("trial_verdicts", []):
-            icon  = VERDICT_ICON.get(t.get("verdict", ""), "  ")
-            score = t.get("fitness_score", "?")
-            nct   = t.get("nct_id", "N/A")
-            title = (t.get("title") or "")[:55]
-            disq  = t.get("disqualifying_criterion", "")
-            disq_str = f"  — {disq}" if disq else ""
-            logger.info(f"  {icon} [{score}/5]  {nct}  {title}{disq_str}")
+        # Print per-trial table or skip message
+        guardrail_status = (eval_result.get("guardrail", {}) or {}).get("status", "unknown")
+
+        if eval_result.get("trial_verdicts"):
+            logger.info("  - Trial Verdicts ------------------------------------")
+            for t in eval_result.get("trial_verdicts", []):
+                icon = VERDICT_ICON.get(t.get("verdict", ""), "  ")
+                score = t.get("fitness_score", "?")
+                nct = t.get("nct_id", "N/A")
+                title = (t.get("title") or "")[:55]
+                disq = t.get("disqualifying_criterion", "")
+                disq_str = f"  - {disq}" if disq else ""
+                logger.info(f"  {icon} [{score}/5]  {nct}  {title}{disq_str}")
+        else:
+            logger.info("  No trial verdicts generated.")
+            logger.info(f"  Guardrail status : {guardrail_status}")
+            reason = (eval_result.get('guardrail', {}) or {}).get("reason", "")
+            if reason:
+                logger.info(f"  Guardrail reason : {reason}")
 
         overall = eval_result["overall"]
-        logger.info("  ─────────────────────────────────────────────────────")
+        logger.info("  -----------------------------------------------------")
         logger.info(f"  Overall score   : {overall.get('score')}/5")
         logger.info(f"  Top trial       : {overall.get('top_trial', 'N/A')}")
         logger.info(f"  Summary         : {overall.get('summary', '')}")
+        logger.info(f"  Gemini calls    : {eval_result.get('gemini_calls', 0)}")
 
         # Save
         out_path = os.path.join(PATIENT_OUTPUT_DIR, f"{patient_id}_eval.json")
         with open(out_path, "w") as f:
             json.dump(eval_result, f, indent=2, default=str)
-        logger.info(f"  Saved → {out_path}")
+        logger.info(f"  Saved -> {out_path}")
 
         patient_evals.append(eval_result)
 
-    # ── Summary ────────────────────────────────────────────────────────────────
+    # Summary
     summary = build_summary(patient_evals)
     summary_path = os.path.join(OUTPUT_DIR, "summary.json")
     with open(summary_path, "w") as f:
@@ -417,15 +512,20 @@ def main() -> None:
     logger.info("=" * 65)
     logger.info("EVALUATION SUMMARY")
     logger.info("=" * 65)
-    logger.info(f"Patients evaluated  : {summary['evaluation_run']['patients_evaluated']}")
-    logger.info(f"Patients failed     : {len(failed)}")
-    logger.info(f"Avg overall score   : {summary['average_overall_score']}/5")
-    logger.info(f"Verdict breakdown   : {summary['verdict_distribution']}")
-    logger.info("─" * 65)
+    logger.info(f"Patients evaluated   : {summary['evaluation_run']['patients_evaluated']}")
+    logger.info(f"Patients failed      : {len(failed)}")
+    logger.info(f"Gemini calls total   : {summary['evaluation_run']['gemini_calls_total']}")
+    logger.info(f"Avg overall score    : {summary['average_overall_score']}/5")
+    logger.info(f"Verdict breakdown    : {summary['verdict_distribution']}")
+    logger.info(f"Guardrail breakdown  : {summary['guardrail_status_distribution']}")
+    logger.info("-" * 65)
     logger.info("Top Recommendations:")
     for rec in summary["top_recommendations"]:
-        logger.info(f"  {rec['patient_id'][:8]}…  →  {rec['top_trial']}  (score {rec['score']}/5)")
-    logger.info(f"Summary saved       → {summary_path}")
+        logger.info(
+            f"  {rec['patient_id'][:8]}...  ->  {rec['top_trial']}  "
+            f"(score {rec['score']}/5, guardrail={rec['guardrail_status']})"
+        )
+    logger.info(f"Summary saved        -> {summary_path}")
     logger.info("=" * 65)
 
 
