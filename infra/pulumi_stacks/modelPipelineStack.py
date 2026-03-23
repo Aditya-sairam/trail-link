@@ -47,21 +47,20 @@ class ModelPipelineStack:
             opts=self.opts,
         )
 
-    def _create_pub_sub_for_patient_request(self):
-        return gcp.pubsub.Topic(
-            "patient-rag-requests",
-            name="clinical-trial-suggestions-request",
-            project=self.project_id,
-        )
-
-       ### Trying to deploy gemini flash:
     def _deploy_gemini_model(self):
-        return gcp.vertex.AiEndpointWithModelGardenDeployment("deploy",
+        gcp.vertex.AiEndpointWithModelGardenDeployment("deploy",
               publisher_model_name="publishers/google/models/medgemma@medgemma-4b-it",
             location=self.region,
             model_config={
                 "accept_eula": True,
             },
+        )
+
+    def _create_pub_sub_for_patient_request(self):
+        return gcp.pubsub.Topic(
+            "patient-rag-requests",
+            name="clinical-trial-suggestions-request",
+            project=self.project_id,
         )
 
     def _create_eval_notification_topic(self):
@@ -124,8 +123,6 @@ class ModelPipelineStack:
                 "service_account_email": self.service_account.email,
                 "environment_variables": {
                     "GCP_PROJECT_ID"        : self.project_id,
-                    "MODEL_PROJECT_ID"      : self.model.project,
-                    "MEDGEMMA_ENDPOINT_ID"  : self.model.endpoint,
                     "GOOGLE_FUNCTION_SOURCE": "rag_service.py",
                     "EVAL_BUCKET"           : f"triallink-eval-results-{self.name}-{self.project_id}",
                 }

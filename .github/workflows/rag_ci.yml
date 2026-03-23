@@ -18,49 +18,74 @@ env:
   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
 
 jobs:
-  run-rag-pipeline:
-    name: Run RAG Evaluation + Log to Databricks MLflow
+  deploy-and-test:
+    name: Deploy + RAG Evaluation + Rollback on Failure
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout code ────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Authenticate to GCP ──────────────────────────────────────────────
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # ── 3. Set up Python ────────────────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ── 4. Install dependencies ─────────────────────────────────────────────
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install \
             mlflow \
+            pulumi \
             google-cloud-aiplatform \
             google-cloud-firestore \
             google-cloud-discoveryengine \
             vertexai \
             functions-framework==3.*
 
-      # ── 5. Run RAG pipeline + log to Databricks MLflow ──────────────────────
+      # ── Snapshot state BEFORE deploy ──────────────────────────────────────
+      - name: Snapshot pre-deploy Pulumi state
+        working-directory: ./infra
+        run: pulumi stack export --stack prod > /tmp/pulumi_pre_deploy.json
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # ── Deploy ────────────────────────────────────────────────────────────
+      - name: Deploy with Pulumi
+        working-directory: ./infra
+        run: pulumi up --yes --stack prod
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # ── Test ──────────────────────────────────────────────────────────────
       - name: Run test_rag_pipeline.py
+        id: rag_test
         run: python tests/test_rag_pipeline.py
 
-      # ── 6. Notify on failure ─────────────────────────────────────────────────
+      # ── Rollback if tests failed ──────────────────────────────────────────
+      - name: Rollback Pulumi deployment
+        if: failure() && steps.rag_test.outcome == 'failure'
+        working-directory: ./infra
+        run: |
+          echo "RAG tests failed — rolling back to pre-deploy state"
+          echo "Commit : ${{ github.sha }}"
+          echo "Author : ${{ github.actor }}"
+          pulumi stack import --stack prod --file /tmp/pulumi_pre_deploy.json
+          pulumi up --yes --stack prod
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # ── Notify ───────────────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
-          echo "RAG pipeline CI failed"
+          echo "Pipeline failed"
           echo "Branch : sanika-swarali-rag"
           echo "Commit : ${{ github.sha }}"
           echo "Author : ${{ github.actor }}"
-          echo "View MLflow runs at: ${{ vars.DATABRICKS_HOST }}/ml/experiments"
+          echo "MLflow : ${{ vars.DATABRICKS_HOST }}/ml/experiments"

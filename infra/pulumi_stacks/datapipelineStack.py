@@ -19,8 +19,6 @@ class DataPipelineStack:
         self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
-
-        self._deploy_gemini_model()
         
         self._grant_storage_access()
         self._grant_vertex_ai_access()  
@@ -124,16 +122,7 @@ class DataPipelineStack:
             ),
         )
 
-    ### Trying to deploy gemini flash:
-    def _deploy_gemini_model(self):
-        gcp.vertex.AiEndpointWithModelGardenDeployment("deploy",
-              publisher_model_name="publishers/google/models/medgemma@medgemma-4b-it",
-            location=self.region,
-            model_config={
-                "accept_eula": True,
-            },
-        )
-
+ 
     def _keep_alive_ping_for_airflow(self):
         return gcp.cloudscheduler.Job(
             "airflow-keep-alive-ping",

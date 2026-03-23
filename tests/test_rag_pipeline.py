@@ -332,7 +332,7 @@ if __name__ == "__main__":
             "rerank_top_k"        : 5,
             "total_test_patients" : len(TEST_PATIENTS),
             "gcp_project"         : GCP_PROJECT_ID,
-            "medgemma_endpoint"   : os.getenv("MEDGEMMA_ENDPOINT_ID", "4966380223210717184"),
+            "medgemma_endpoint"   : os.getenv("MEDGEMMA_ENDPOINT_ID", "7728397412649140224"),
         })
 
         all_results = []

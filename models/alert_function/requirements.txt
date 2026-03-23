@@ -155,3 +155,4 @@ functions-framework==3.*
 flask
 google-cloud-discoveryengine==0.17.0
 numpy==2.4.3
+google-cloud-monitoring==2.29.1

@@ -85,7 +85,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-f1cff658-4c32-4ffb-95eb-4a5b4eade528",
+    "mg-endpoint-833ffeb4-d9e8-42e3-ae54-2a1a22a5777e",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
