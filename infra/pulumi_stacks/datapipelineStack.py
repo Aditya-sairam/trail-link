@@ -16,7 +16,7 @@ class DataPipelineStack:
         self._create_artifact_registry()
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
-        self._deploy_index_to_endpoint() 
+        # self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
         
@@ -28,12 +28,13 @@ class DataPipelineStack:
         self._export_outputs()
 
         self.dvc_bucket = gcp.storage.Bucket(
-            f"{self.name}-dvc-storage",
-            name=f"dvc-storage-clinical-trials-{self.project_id}",
+            f"dvc-storage-clinical-trials",
+            name=f"dvc-storage-clinical-trials",
             location="US",
             versioning=gcp.storage.BucketVersioningArgs(
                 enabled=True,
             ),
+            force_destroy=True
         )
 
     def _create_bucket(self) -> gcp.storage.Bucket:
@@ -207,13 +208,8 @@ class DataPipelineStack:
         )
 
     def _deploy_index_to_endpoint(self):
-        """
-        Deploys the index to the endpoint so it can be queried.
-        Without this step, the index exists but can't be searched.
-        """
         gcp.vertex.AiIndexEndpointDeployedIndex(
             f"{self.name}-deployed-trials-index",
-            # project=self.project_id,
             region=self.region,
             index_endpoint=self.vector_endpoint.id,
             index=self.vector_index.id,
@@ -221,6 +217,8 @@ class DataPipelineStack:
             display_name=f"clinical-trials-{self.name}",
             opts=pulumi.ResourceOptions(
                 depends_on=[self.vector_endpoint, self.vector_index],
+                retain_on_delete=True,      # ← never delete real resource
+                ignore_changes=["*"],       # ← never try to update it
             ),
         )
 

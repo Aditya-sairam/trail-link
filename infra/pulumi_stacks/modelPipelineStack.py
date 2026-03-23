@@ -30,11 +30,11 @@ class ModelPipelineStack:
             source=pulumi.FileArchive("../../models/alert_function")
         )
         self.pub_sub_service         = self._create_pub_sub_for_patient_request()
-        self.eval_notification_topic = self._create_eval_notification_topic()
+        # self.eval_notification_topic = self._create_eval_notification_topic()
         self.rag_service_function    = self._deploy_cloud_function() 
-        self.alert_function          = self._deploy_alert_function()
-        self._setup_gcs_notification()
-        self._setup_alert_policies()                                  
+        # self.alert_function          = self._deploy_alert_function()
+        # self._setup_gcs_notification()
+        # self._setup_alert_policies()                                  
         self._make_function_public()
         self._grant_permissions()
         self._export_outputs()
@@ -86,18 +86,18 @@ class ModelPipelineStack:
             uniform_bucket_level_access=True,
         )
 
-    def _setup_gcs_notification(self):
-        gcp.storage.Notification(
-            f"{self.name}-eval-gcs-notification",
-            bucket=self.eval_bucket.name,
-            payload_format="JSON_API_V1",
-            topic=self.eval_notification_topic.id,
-            event_types=["OBJECT_FINALIZE"],
-            object_name_prefix="eval_results/",
-            opts=pulumi.ResourceOptions(
-                depends_on=[self.eval_bucket, self.eval_notification_topic]
-            ),
-        )
+    # def _setup_gcs_notification(self):
+    #     gcp.storage.Notification(
+    #         f"{self.name}-eval-gcs-notification",
+    #         bucket=self.eval_bucket.name,
+    #         payload_format="JSON_API_V1",
+    #         topic=self.eval_notification_topic.id,
+    #         event_types=["OBJECT_FINALIZE"],
+    #         object_name_prefix="eval_results/",
+    #         opts=pulumi.ResourceOptions(
+    #             depends_on=[self.eval_bucket, self.eval_notification_topic]
+    #         ),
+    #     )
 
     def _deploy_cloud_function(self):
         """RAG service Cloud Function — always deployed"""
@@ -279,20 +279,20 @@ class ModelPipelineStack:
                 opts=pulumi.ResourceOptions(parent=self.service_account),
             )
 
-        gcp.pubsub.TopicIAMMember(
-            f"{self.name}-gcs-pubsub-publisher",
-            project=self.project_id,
-            topic=self.eval_notification_topic.name,
-            role="roles/pubsub.publisher",
-            member=pulumi.Output.concat(
-                "serviceAccount:service-",
-                self.project_id,
-                "@gs-project-accounts.iam.gserviceaccount.com"
-            ),
-        )
+        # gcp.pubsub.TopicIAMMember(
+        #     f"{self.name}-gcs-pubsub-publisher",
+        #     project=self.project_id,
+        #     topic=self.eval_notification_topic.name,
+        #     role="roles/pubsub.publisher",
+        #     member=pulumi.Output.concat(
+        #         "serviceAccount:service-",
+        #         self.project_id,
+        #         "@gs-project-accounts.iam.gserviceaccount.com"
+        #     ),
+        # )
 
     def _export_outputs(self):
         pulumi.export("RAG_SERVICE_FUNCTION",    self.rag_service_function.name)
         pulumi.export("RAG_PIPELINE_TOPIC",      self.pub_sub_service.name)
         pulumi.export("EVAL_BUCKET",             self.eval_bucket.name)
-        pulumi.export("EVAL_NOTIFICATION_TOPIC", self.eval_notification_topic.name)
+        # pulumi.export("EVAL_NOTIFICATION_TOPIC", self.eval_notification_topic.name)
