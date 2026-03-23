@@ -16,6 +16,7 @@ env:
   MLFLOW_TRACKING_URI:       databricks
   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
+  PULUMI_BACKEND_URL:        gs://pulumi-state-mlops-test-project-486922
 
 jobs:
   deploy-and-test:
@@ -48,20 +49,19 @@ jobs:
             vertexai \
             functions-framework==3.*
 
+      # ── Login to GCS backend ──────────────────────────────────────────────
+      - name: Login to Pulumi GCS backend
+        run: pulumi login gs://pulumi-state-mlops-test-project-486922
+
       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
       - name: Snapshot pre-deploy Pulumi state
         working-directory: ./infra
         run: pulumi stack export > /tmp/pulumi_pre_deploy.json
-        env:
-          PULUMI_BACKEND_URL:  pulumi-state-mlops-test-project-486922
 
       # ── Deploy ────────────────────────────────────────────────────────────
       - name: Deploy with Pulumi
         working-directory: ./infra
-        run: pulumi up --yes 
-        env:
-          PULUMI_BACKEND_URL:  pulumi-state-mlops-test-project-486922
-
+        run: pulumi up --yes
 
       # ── Test ──────────────────────────────────────────────────────────────
       - name: Run test_rag_pipeline.py
@@ -76,13 +76,10 @@ jobs:
           echo "RAG tests failed — rolling back to pre-deploy state"
           echo "Commit : ${{ github.sha }}"
           echo "Author : ${{ github.actor }}"
-          pulumi stack import  --file /tmp/pulumi_pre_deploy.json
-          pulumi up --yes 
-        env:
-          PULUMI_BACKEND_URL:  pulumi-state-mlops-test-project-486922
+          pulumi stack import --file /tmp/pulumi_pre_deploy.json
+          pulumi up --yes
 
-
-      # ── Notify ─────────────────────────────────────────────────────
+      # ── Notify ───────────────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
