@@ -124,7 +124,7 @@ Since TrialLink's core task is **clinical eligibility reasoning over structured 
 |-------|------|-----------|--------------------------|
 | **GPT-4o** (OpenAI) | General-purpose LLM | Strong reasoning, broad medical knowledge | Proprietary API — no GCP-native deployment, data privacy concerns for PHI |
 | **Gemini 1.5 Pro** (Google) | General-purpose LLM | Native Vertex AI support, long context | Not fine-tuned on clinical/biomedical data; weaker on eligibility criterion parsing |
-| **BioMistral-7B** | Biomedical fine-tuned | Open-source, biomedical pretraining | Limited instruction-following for structured output |
+| **BioMistral-7B** | Biomedical fine-tuned | Open-source, biomedical pretraining | Limited instruction-following; poor structured output on multi-step clinical prompts |
 | **Med-PaLM 2** (Google) | Medical LLM | Strong clinical benchmarks | Restricted access, not available for standard deployment |
 | **Llama 3.1 8B Instruct** (Meta) | General instruction-tuned | Open-source, deployable on Vertex AI | No medical domain specialization; poor performance on eligibility criterion matching in testing |
 | **MedGemma 4B-IT** (Google DeepMind) | Medical-domain fine-tuned | Purpose-built for clinical reasoning | Smaller context window than GPT-4o |
@@ -421,7 +421,7 @@ All artifacts are uploaded to Databricks MLflow and GitHub Actions artifacts.
 
 ### 6.2 LLM-as-Judge Evaluation (Gemini)
 
-**Owner**: Teammate
+**Owner**: Vaishnavi
 **Location**: `models/evaluate_rag.py`
 **Results**: `eval_results/`
 
