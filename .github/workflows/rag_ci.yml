@@ -1,10 +1,10 @@
 name: TrialLink RAG Pipeline CI
-
+ 
 on:
   push:
     branches:
       - sanika-swarali-rag
-
+ 
 env:
   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
   MODEL_PROJECT_ID:            ${{ vars.MODEL_PROJECT_ID }}
@@ -18,16 +18,16 @@ env:
   MLFLOW_TRACKING_URI:         databricks
   DATABRICKS_HOST:             ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:            ${{ secrets.DATABRICKS_TOKEN }}
-  PULUMI_BACKEND_URL:          gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
+  PULUMI_BACKEND_URL:          pulumi-state-project-1e322b00-efe1-41f8-8d9
   PULUMI_CONFIG_PASSPHRASE:    ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
   ENABLE_INPUT_LLM_GUARDRAIL:  "true"
   ENABLE_OUTPUT_LLM_GUARDRAIL: "true"
   GOOGLE_CLOUD_QUOTA_PROJECT: project-1e322b00-efe1-41f8-8d9
-
+ 
 permissions:
   issues: write
   contents: read
-
+ 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 1: RAG Evaluation — validation, bias detection, rollback check
@@ -35,21 +35,21 @@ jobs:
   rag-evaluation:
     name: RAG Evaluation + Validation + Bias + Rollback
     runs-on: ubuntu-latest
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+ 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
+ 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
+ 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -64,10 +64,10 @@ jobs:
             functions-framework==3.* \
             python-dotenv \
             requests
-
+ 
       - name: Run RAG pipeline evaluation
         run: python tests/test_rag_pipeline.py
-
+ 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -75,7 +75,7 @@ jobs:
           name: rag-test-results
           path: tests/test_results/
           retention-days: 30
-
+ 
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 2: Deploy — only runs if evaluation passes
   # ═══════════════════════════════════════════════════════════════════════════
@@ -84,31 +84,31 @@ jobs:
     runs-on: ubuntu-latest
     needs: rag-evaluation
     if: success()
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+ 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
+ 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
+ 
       - name: Install Pulumi
         run: pip install pulumi
-
+ 
       - name: Login to Pulumi GCS backend
-        run: pulumi login gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
-
+        run: pulumi login pulumi-state-project-1e322b00-efe1-41f8-8d9
+ 
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
         run: pulumi up --yes --stack dev
-
+ 
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 3: Alert on failure — GitHub Issue + @mention team
   # ═══════════════════════════════════════════════════════════════════════════
@@ -117,10 +117,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [rag-evaluation, deploy]
     if: always() && (needs.rag-evaluation.result == 'failure' || needs.deploy.result == 'failure')
-
+ 
     permissions:
       issues: write
-
+ 
     steps:
       - name: Create GitHub Issue
         uses: actions/github-script@v7
@@ -132,16 +132,16 @@ jobs:
           script: |
             const evalFailed   = process.env.EVAL_RESULT === 'failure';
             const deployFailed = process.env.DEPLOY_RESULT === 'failure';
-
+ 
             let failStage = '';
             if (evalFailed) {
               failStage = '❌ RAG Evaluation Failed — Deployment Blocked';
             } else if (deployFailed) {
               failStage = '❌ Pulumi Deployment Failed — Evaluation Passed';
             }
-
+ 
             const title = `🚨 ${failStage} — ${context.sha.slice(0, 7)}`;
-
+ 
             const body = [
               `## RAG Pipeline CI Failure`,
               ``,
@@ -188,7 +188,7 @@ jobs:
               ``,
               `cc @Aditya-sairam @ItSwara @Sannn7 @Baidyam @Vaishnavi0805`,
             ].join('\n');
-
+ 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -197,15 +197,15 @@ jobs:
               labels: ['ci-failure', 'rag-pipeline'],
               assignees: [context.actor],
             });
-
-
+ 
+ 
 # name: TrialLink RAG Pipeline CI
-
+ 
 # on:
 #   push:
 #     branches:
 #       - sanika-swarali-rag
-
+ 
 # env:
 #   GCP_PROJECT_ID:            ${{ vars.GCP_PROJECT_ID }}
 #   MODEL_PROJECT_ID:          ${{ vars.MODEL_PROJECT_ID }}
@@ -217,12 +217,121 @@ jobs:
 #   MLFLOW_TRACKING_URI:       databricks
 #   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
 #   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
-#   PULUMI_BACKEND_URL:        gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
+#   PULUMI_BACKEND_URL:        pulumi-state-project-1e322b00-efe1-41f8-8d9
 #   PULUMI_CONFIG_PASSPHRASE:  ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
-
+ 
 # jobs:
 #   deploy-and-test:
 #     name: Deploy + RAG Evaluation + Rollback on Failure
+#     runs-on: ubuntu-latest
+ 
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+ 
+#       - name: Authenticate to GCP
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+ 
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+ 
+#       - name: Install dependencies
+#         run: |
+#           pip install --upgrade pip
+#           pip install \
+#             mlflow \
+#             pulumi \
+#             google-cloud-aiplatform \
+#             google-cloud-firestore \
+#             google-cloud-discoveryengine \
+#             vertexai \
+#             functions-framework==3.*
+ 
+#       # ── Login to GCS backend ──────────────────────────────────────────────
+#       - name: Login to Pulumi GCS backend
+#         run: pulumi login pulumi-state-project-1e322b00-efe1-41f8-8d9
+ 
+#       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
+#       - name: Snapshot pre-deploy Pulumi state
+#         working-directory: ./infra/pulumi_stacks
+#         run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
+ 
+ 
+#       # ── Deploy ────────────────────────────────────────────────────────────
+#       - name: Deploy with Pulumi
+#         working-directory: ./infra/pulumi_stacks
+#         run: pulumi up --yes --stack dev
+ 
+#       # ── Test ──────────────────────────────────────────────────────────────
+#       - name: Run test_rag_pipeline.py
+#         id: rag_test
+#         run: python tests/test_rag_pipeline.py
+ 
+#       # ── Rollback if tests failed ──────────────────────────────────────────
+#       - name: Rollback Pulumi deployment
+#         if: failure() && steps.rag_test.outcome == 'failure'
+#         working-directory: ./infra/pulumi_stacks
+#         run: |
+#           pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
+#           pulumi up --yes --stack dev
+ 
+#       # ── Notify ───────────────────────────────────────────────────────────
+#       - name: Notify on failure
+#         if: failure()
+#         run: |
+#           echo "Pipeline failed"
+#           echo "Branch : sanika-swarali-rag"
+#           echo "Commit : ${{ github.sha }}"
+#           echo "Author : ${{ github.actor }}"
+#           echo "MLflow : ${{ vars.DATABRICKS_HOST }}/ml/experiments"
+
+
+
+
+
+
+
+
+# name: TrialLink RAG Pipeline CI
+
+# on:
+#   push:
+#     branches:
+#       - sanika-swarali-rag
+
+# env:
+#   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
+#   MODEL_PROJECT_ID:            ${{ vars.MODEL_PROJECT_ID }}
+#   MODEL_PROJECT_NUMBER:        ${{ vars.MODEL_PROJECT_NUMBER }}
+#   MEDGEMMA_ENDPOINT_ID:        ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
+#   MEDGEMMA_DEDICATED_DNS:      ${{ vars.MEDGEMMA_DEDICATED_DNS }}
+#   GCP_REGION:                  ${{ vars.GCP_REGION }}
+#   FIRESTORE_DATABASE:          ${{ vars.FIRESTORE_DATABASE }}
+#   VECTOR_SEARCH_ENDPOINT_ID:   ${{ vars.VECTOR_SEARCH_ENDPOINT_ID }}
+#   DEPLOYED_INDEX_ID:           ${{ vars.DEPLOYED_INDEX_ID }}
+#   MLFLOW_TRACKING_URI:         databricks
+#   DATABRICKS_HOST:             ${{ vars.DATABRICKS_HOST }}
+#   DATABRICKS_TOKEN:            ${{ secrets.DATABRICKS_TOKEN }}
+#   PULUMI_BACKEND_URL:          gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
+#   PULUMI_CONFIG_PASSPHRASE:    ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+#   ENABLE_INPUT_LLM_GUARDRAIL:  "true"
+#   ENABLE_OUTPUT_LLM_GUARDRAIL: "true"
+#   GOOGLE_CLOUD_QUOTA_PROJECT: project-1e322b00-efe1-41f8-8d9
+
+# permissions:
+#   issues: write
+#   contents: read
+
+# jobs:
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   # Job 1: RAG Evaluation — validation, bias detection, rollback check
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   rag-evaluation:
+#     name: RAG Evaluation + Validation + Bias + Rollback
 #     runs-on: ubuntu-latest
 
 #     steps:
@@ -244,47 +353,146 @@ jobs:
 #           pip install --upgrade pip
 #           pip install \
 #             mlflow \
-#             pulumi \
+#             databricks-sdk \
 #             google-cloud-aiplatform \
 #             google-cloud-firestore \
 #             google-cloud-discoveryengine \
+#             google-auth \
 #             vertexai \
-#             functions-framework==3.*
+#             functions-framework==3.* \
+#             python-dotenv \
+#             requests
 
-#       # ── Login to GCS backend ──────────────────────────────────────────────
+#       - name: Run RAG pipeline evaluation
+#         run: python tests/test_rag_pipeline.py
+
+#       - name: Upload test results
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: rag-test-results
+#           path: tests/test_results/
+#           retention-days: 30
+
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   # Job 2: Deploy — only runs if evaluation passes
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   deploy:
+#     name: Deploy with Pulumi
+#     runs-on: ubuntu-latest
+#     needs: rag-evaluation
+#     if: success()
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       - name: Authenticate to GCP
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install Pulumi
+#         run: pip install pulumi
+
 #       - name: Login to Pulumi GCS backend
 #         run: pulumi login gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
 
-#       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
-#       - name: Snapshot pre-deploy Pulumi state
-#         working-directory: ./infra/pulumi_stacks
-#         run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
-
-
-#       # ── Deploy ────────────────────────────────────────────────────────────
 #       - name: Deploy with Pulumi
 #         working-directory: ./infra/pulumi_stacks
 #         run: pulumi up --yes --stack dev
 
-#       # ── Test ──────────────────────────────────────────────────────────────
-#       - name: Run test_rag_pipeline.py
-#         id: rag_test
-#         run: python tests/test_rag_pipeline.py
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   # Job 3: Alert on failure — GitHub Issue + @mention team
+#   # ═══════════════════════════════════════════════════════════════════════════
+#   alert-on-failure:
+#     name: Create Alert on Failure
+#     runs-on: ubuntu-latest
+#     needs: [rag-evaluation, deploy]
+#     if: always() && (needs.rag-evaluation.result == 'failure' || needs.deploy.result == 'failure')
 
-#       # ── Rollback if tests failed ──────────────────────────────────────────
-#       - name: Rollback Pulumi deployment
-#         if: failure() && steps.rag_test.outcome == 'failure'
-#         working-directory: ./infra/pulumi_stacks
-#         run: |
-#           pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
-#           pulumi up --yes --stack dev
+#     permissions:
+#       issues: write
 
-#       # ── Notify ───────────────────────────────────────────────────────────
-#       - name: Notify on failure
-#         if: failure()
-#         run: |
-#           echo "Pipeline failed"
-#           echo "Branch : sanika-swarali-rag"
-#           echo "Commit : ${{ github.sha }}"
-#           echo "Author : ${{ github.actor }}"
-#           echo "MLflow : ${{ vars.DATABRICKS_HOST }}/ml/experiments"
+#     steps:
+#       - name: Create GitHub Issue
+#         uses: actions/github-script@v7
+#         env:
+#           DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+#           EVAL_RESULT: ${{ needs.rag-evaluation.result }}
+#           DEPLOY_RESULT: ${{ needs.deploy.result }}
+#         with:
+#           script: |
+#             const evalFailed   = process.env.EVAL_RESULT === 'failure';
+#             const deployFailed = process.env.DEPLOY_RESULT === 'failure';
+
+#             let failStage = '';
+#             if (evalFailed) {
+#               failStage = '❌ RAG Evaluation Failed — Deployment Blocked';
+#             } else if (deployFailed) {
+#               failStage = '❌ Pulumi Deployment Failed — Evaluation Passed';
+#             }
+
+#             const title = `🚨 ${failStage} — ${context.sha.slice(0, 7)}`;
+
+#             const body = [
+#               `## RAG Pipeline CI Failure`,
+#               ``,
+#               `| Field | Value |`,
+#               `|-------|-------|`,
+#               `| **Branch** | \`${context.ref}\` |`,
+#               `| **Commit** | [\`${context.sha.slice(0, 7)}\`](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/commit/${context.sha}) |`,
+#               `| **Author** | @${context.actor} |`,
+#               `| **CI Run** | [View logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |`,
+#               `| **MLflow** | [View experiments](${process.env.DATABRICKS_HOST}/ml/experiments) |`,
+#               `| **Evaluation** | ${evalFailed ? '❌ Failed' : '✅ Passed'} |`,
+#               `| **Deployment** | ${deployFailed ? '❌ Failed' : evalFailed ? '⛔ Blocked' : '✅ Passed'} |`,
+#               ``,
+#               evalFailed
+#                 ? [
+#                     `### ⛔ Deployment Blocked — Evaluation Failed`,
+#                     ``,
+#                     `The RAG evaluation did not pass. Deployment was never attempted.`,
+#                     ``,
+#                     `**Possible causes:**`,
+#                     `- **Validation threshold failed** — success_rate or avg_matched below minimum`,
+#                     `- **Bias detected** — demographic slice performing significantly worse than average`,
+#                     `- **Rollback triggered** — performance degradation vs previous MLflow run`,
+#                     `- **Guardrail errors** — input/output guardrail failures`,
+#                     `- **Infrastructure error** — GCP auth, endpoint down, Firestore unreachable`,
+#                   ].join('\n')
+#                 : [
+#                     `### ❌ Deployment Failed — Evaluation Passed`,
+#                     ``,
+#                     `The RAG evaluation passed all checks, but the Pulumi deployment failed.`,
+#                     `The previous production version is still live (no rollback needed).`,
+#                     ``,
+#                     `**Possible causes:**`,
+#                     `- IAM permission errors (service account missing roles)`,
+#                     `- Pulumi state conflict`,
+#                     `- GCP resource quota or API errors`,
+#                   ].join('\n'),
+#               ``,
+#               `### Action required:`,
+#               `1. Check the [CI logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+#               `2. Download test artifacts from the CI run for per-patient details`,
+#               `3. Review the MLflow run for metrics and logged artifacts`,
+#               `4. Fix the issue and re-push to trigger a new CI run`,
+#               ``,
+#               `cc @Aditya-sairam @ItSwara @Sannn7 @Baidyam @Vaishnavi0805`,
+#             ].join('\n');
+
+#             await github.rest.issues.create({
+#               owner: context.repo.owner,
+#               repo: context.repo.repo,
+#               title: title,
+#               body: body,
+#               labels: ['ci-failure', 'rag-pipeline'],
+#               assignees: [context.actor],
+#             });
+
