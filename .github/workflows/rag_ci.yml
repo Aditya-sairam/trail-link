@@ -3,7 +3,7 @@ name: TrialLink RAG Pipeline CI
 on:
   push:
     branches:
-      - main
+      - sanika-swarali-rag
 
 env:
   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
@@ -22,6 +22,7 @@ env:
   PULUMI_CONFIG_PASSPHRASE:    ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
   ENABLE_INPUT_LLM_GUARDRAIL:  "true"
   ENABLE_OUTPUT_LLM_GUARDRAIL: "true"
+  GOOGLE_CLOUD_QUOTA_PROJECT: project-1e322b00-efe1-41f8-8d9
 
 permissions:
   issues: write

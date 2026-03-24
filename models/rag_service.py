@@ -76,6 +76,7 @@ GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
     "VECTOR_SEARCH_ENDPOINT_ID",
     "projects/650611980577/locations/us-central1/indexEndpoints/1447531247222915072",
+
 )
 DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "clinical_trials_dev")
 
@@ -768,12 +769,15 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
         import requests as http_requests
 
         region = os.getenv("GCP_REGION", "us-central1")
+
         project_number = "650611980577" 
+
+
         endpoint_id = MEDGEMMA_ENDPOINT_ID
 
         # ✅ Dedicated domain (MANDATORY)
-        dedicated_domain = f"{endpoint_id}.{region}-{project_number}.prediction.vertexai.goog"
-
+        dedicated_domain = os.getenv("MEDGEMMA_DEDICATED_DNS")
+        project_number = os.getenv("MODEL_PROJECT_NUMBER", "839890914760")
         url = f"https://{dedicated_domain}/v1/projects/{project_number}/locations/{region}/endpoints/{endpoint_id}:predict"
 
         # ✅ Auth (same as gcloud access token)
