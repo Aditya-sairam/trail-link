@@ -2,6 +2,8 @@
 
 MLOps-powered platform for connecting patients with relevant clinical trials using RAG (Retrieval Augmented Generation) and automated data pipelines.
 
+## For Model Development Pipeline , Please refer the README.md inside models/ folder
+
 ## Data Pipeline Assignment 
 
 For the Data Pipeline assignment we have a local Airflow running on Docker compose which fetches data from the Clinical Trials API , for the diabetes / breast cancer clinical trials which are recruiting paitents currently. 
