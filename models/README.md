@@ -66,8 +66,9 @@ Patient Summary (text)
 ## 2. Infrastructure Setup
 
 > **Location**: `infra/pulumi_stacks/`
-
-Infrastructure is provisioned using **Pulumi** with a GCS backend (`gs://pulumi-state-mlops-test-project-486922`). All resources are deployed to `mlops-test-project-486922` in `us-central1`.
+  **Owner**: Aditya Sairam 
+  
+Infrastructure is provisioned using **Pulumi** with a GCS backend (`gs://pulumi-state-project-1e322b00-efe1-41f8-8d9`). All resources are deployed to `project-1e322b00-efe1-41f8-8d9` in `us-central1`.
 
 ### GCP Services Used
 
@@ -86,7 +87,7 @@ Infrastructure is provisioned using **Pulumi** with a GCS backend (`gs://pulumi-
 ### Pulumi Stack
 
 - **Stack name**: `dev`
-- **Backend**: `gs://pulumi-state-mlops-test-project-486922`
+- **Backend**: `gs://pulumi-state-project-1e322b00-efe1-41f8-8d9`
 - **Deploy command**: `pulumi up --yes --stack dev`
 - **State export**: `pulumi stack export --stack dev`
 
@@ -106,9 +107,9 @@ Since TrialLink uses a pre-trained model (MedGemma 4B-IT), there is no tradition
 Clinical trial data flows through the following pipeline:
 
 1. **Ingestion**: Apache Airflow DAGs (`pipelines/`) fetch trial data from the ClinicalTrials.gov API v2 for two supported conditions — diabetes and breast cancer (~1000 trials each).
-2. **Storage**: Fetched trials are stored in Cloud Firestore (`clinical-trials-db`) in per-condition collections (`clinical_trials_diabetes`, `clinical_trials_breast_cancer`).
-3. **Embedding**: A separate Airflow DAG converts stored trials into vector embeddings using Vertex AI `text-embedding-005` (768 dimensions).
-4. **Indexing**: Embeddings are uploaded to a Vertex AI Matching Engine index for vector search.
+2. **Storage**: Fetched trials are stored in GCP Firestore (`clinical-trials-db`) in per-condition collections (`clinical_trials_diabetes`, `clinical_trials_breast_cancer`).
+3. **Embedding**: A separate Airflow DAG step converts stored trials into vector embeddings using Vertex AI `text-embedding-005` (768 dimensions).
+4. **Indexing**: Embeddings are stored to  Vertex AI Vector Search (Vector Database).
 
 At inference time, the RAG pipeline (`models/rag_service.py`) reads from Firestore and the Vector Search index — it does not re-run the data pipeline.
 
@@ -182,7 +183,7 @@ Bias detection is covered in detail in [Section 7: Model Bias Detection](#7-mode
 
 MedGemma is deployed from the Vertex AI Model Garden and versioned through Vertex AI's model registry. The current deployed model:
 ```
-Project:    mlops-test-project-486922
+Project:    project-1e322b00-efe1-41f8-8d9
 Endpoint:   mg-endpoint-833ffeb4-d9e8-42e3-ae54-2a1a22a5777e
 Model:      google-medgemma-medgemma-4b-it-1774290346 (v1)
 Region:     us-central1
@@ -190,8 +191,8 @@ Region:     us-central1
 
 Pipeline artifacts (test results, per-patient JSONs, summary reports) are logged to Databricks MLflow after each CI run using `mlflow.log_artifacts()`.
 
-
-Add here why this model , why best 
+***Why MedGemma Model?***
+MedGemma-4b-it is a strong choice for clinical trial matching because it is specifically trained on medical literature and biomedical data, giving it a native understanding of clinical terminology, drug names, and eligibility criteria without extra prompt engineering. The instruction-tuned variant is optimized for structured reasoning tasks, which aligns well with evaluating complex inclusion/exclusion criteria against patient profiles. At 4 billion parameters, it strikes a practical balance between reasoning capability and serving cost on Vertex AI. Additionally, since it runs entirely within the GCP project, patient data never leaves the infrastructure — a critical requirement for healthcare applications.  
 
 ---
 
@@ -421,6 +422,7 @@ All artifacts are uploaded to Databricks MLflow and GitHub Actions artifacts.
 
 ### 6.2 LLM-as-Judge Evaluation (Gemini)
 
+**Owner**: Vaishnavi
 **Owner**: Vaishnavi
 **Location**: `models/evaluate_rag.py`
 **Results**: `eval_results/`
@@ -740,35 +742,48 @@ Test results are also uploaded as GitHub Actions artifacts on every CI run and a
 ## 11. CI/CD Pipeline Automation
 
 > **PDF Reference**: Section 7 — CI/CD Pipeline Automation for Model Development
-> **Owner**: Swarali (pipeline + alerts), Teammate (Pulumi deployment)
+> **Owner**: Swarali (pipeline + alerts), Aditya Sairam (Pulumi deployment)
 > **Location**: `.github/workflows/rag_ci.yml`
 
 ### 11.1 Pipeline Overview
 
-The CI/CD pipeline is triggered on every push to `sanika-swarali-rag` and follows a **test-first, deploy-second** strategy. Deployment only proceeds if all evaluation checks pass.
+The CI/CD pipeline is triggered on every push to `sanika-swarali-rag` and follows a **deploy-first, validate-second, rollback-if-needed** strategy. Infrastructure is deployed via Pulumi, then immediately validated by running the full RAG evaluation against 13 test patients. If validation fails for any reason — degraded retrieval quality, bias detection, or rollback threshold breach — the Pulumi infrastructure is automatically restored to the last known good state.
+
 ```
 Push to sanika-swarali-rag
        │
        ▼
-┌──────────────────────────┐
-│  Job 1: RAG Evaluation    │
-│                           │
-│  1. Run 13 test patients  │
-│  2. Validation threshold  │──── FAIL ──┐
-│  3. Bias detection        │            │
-│  4. Rollback check        │            ▼
-│  5. Log to MLflow         │    ┌───────────────┐
-│  6. Upload artifacts      │    │ Job 3: Alert   │
-└──────────┬───────────────┘    │                │
-           │                     │ GitHub Issue    │
-         PASS                    │ @mention team   │
-           │                     │ Assign author   │
-           ▼                     └───────────────┘
-┌──────────────────────────┐
-│  Job 2: Deploy            │
-│                           │
-│  Pulumi up --stack dev    │
-└──────────────────────────┘
+┌──────────────────────────────┐
+│  Snapshot pre-deploy state    │  pulumi stack export → /tmp/pulumi_pre_deploy.json
+└──────────┬───────────────────┘
+           ▼
+┌──────────────────────────────┐
+│  Deploy with Pulumi           │  pulumi up --yes --stack dev
+└──────────┬───────────────────┘
+           ▼
+┌──────────────────────────────┐
+│  RAG Evaluation               │
+│                               │
+│  1. Run 13 test patients      │
+│  2. Validation threshold      │──── FAIL ──┐
+│  3. Bias detection            │            │
+│  4. Rollback check            │            ▼
+│  5. Log to MLflow             │   ┌─────────────────────────┐
+│  6. Upload artifacts          │   │  Infrastructure Rollback │
+└──────────┬────────────────────┘   │                         │
+           │                        │  pulumi stack import     │
+         PASS                       │  pulumi up --yes         │
+           │                        │                         │
+           ▼                        └──────────┬──────────────┘
+    Deployment live                            ▼
+                                    ┌─────────────────────────┐
+                                    │  Notify on Failure       │
+                                    │                         │
+                                    │  GitHub Issue created    │
+                                    │  @mention all team       │
+                                    │  Link to CI logs         │
+                                    │  Link to MLflow runs     │
+                                    └─────────────────────────┘
 ```
 
 ### 11.2 CI/CD Setup
@@ -782,6 +797,7 @@ Push to sanika-swarali-rag
 | Runner | `ubuntu-latest` |
 | Python | 3.11 |
 | GCP Auth | Service account key (`GCP_SA_KEY` secret) |
+| Pulumi Backend | `gs://pulumi-state-project-1e322b00-efe1-41f8-8d9` |
 | MLflow Backend | Databricks (`MLFLOW_TRACKING_URI=databricks`) |
 
 ### 11.3 Automated Model Validation
@@ -801,28 +817,35 @@ Fails CI if either metric is below threshold.
 ```python
 BIAS_THRESHOLD = 2.0   # fails CI if any slice is >2.0 below average
 ```
-Compares `avg_trials_matched` per slice (condition, age_group, sex) against overall average.
+Compares `avg_trials_matched` per slice (condition, age_group, sex) against the overall average. If any demographic slice is underserved by more than 2.0 trials on average, deployment is blocked.
 
-**Check 3 — Rollback:**
+**Check 3 — Rollback Check:**
 ```python
 DEGRADATION_TOLERANCE = 0.2   # 20% tolerance
 ```
-Compares current run against the previous FINISHED MLflow run. If `success_rate` or `avg_matched` dropped more than 20%, CI fails.
+Compares current run metrics against the previous FINISHED MLflow run. If `success_rate` or `avg_matched` dropped more than 20%, CI fails and the infrastructure rollback is triggered.
 
-If any check fails → deployment is blocked → alert is triggered.
+If any check fails → infrastructure rollback runs → alert is triggered.
 
 ### 11.4 Model Deployment
 
 **PDF Reference**: Section 7.4
 
-Deployment is handled by Pulumi in Job 2 and only runs if Job 1 (evaluation) passes. The RAG service is deployed as a Cloud Function v2 on GCP.
+Before deployment, the current Pulumi stack state is snapshotted so it can be restored if validation fails:
+
 ```yaml
+# Step 1 — Snapshot current state
+- name: Snapshot pre-deploy Pulumi state
+  working-directory: ./infra/pulumi_stacks
+  run: pulumi stack export --stack dev > /tmp/pulumi_pre_deploy.json
+
+# Step 2 — Deploy
 - name: Deploy with Pulumi
   working-directory: ./infra/pulumi_stacks
   run: pulumi up --yes --stack dev
 ```
 
-> _Pulumi deployment configuration is managed by the infra teammate in `infra/pulumi_stacks/`._
+The RAG service is deployed as a Cloud Function v2 on GCP. Pulumi manages all infrastructure — Cloud Functions, Firestore, Vector Search, Pub/Sub, and supporting IAM — via the GCS-backed state at `gs://pulumi-state-project-1e322b00-efe1-41f8-8d9`.
 
 ### 11.5 Notifications and Alerts
 
@@ -854,7 +877,8 @@ Rollback operates at two levels:
 
 **Level 1 — Metric-based rollback (pre-deployment):**
 
-The `check_rollback()` function in `test_rag_pipeline.py` compares current metrics against the previous FINISHED MLflow run. If performance degraded more than 20%, CI fails before deployment is attempted. The previous production version remains live.
+The `check_rollback()` function in `test_rag_pipeline.py` compares current metrics against the previous FINISHED MLflow run. If performance degraded more than 20%, CI fails before a new deployment is attempted. The previously deployed version remains live.
+
 ```python
 def check_rollback(current_success_rate, current_avg_matched):
     # Query previous FINISHED run from MLflow
@@ -870,7 +894,37 @@ BASELINE_AVG_MATCHED  = 3.0
 
 **Level 2 — Infrastructure rollback (post-deployment failure):**
 
-If the Pulumi deployment itself fails after evaluation passes, the previous infrastructure state remains unchanged since Pulumi only applies changes on success. No manual rollback is needed.
+Before every `pulumi up`, the current stack state is exported and saved as a snapshot. If `test_rag_pipeline.py` fails after a successful deployment — meaning degraded code was deployed and is now returning bad results — the CI pipeline automatically restores the pre-deploy snapshot and re-applies it to GCP:
+
+```yaml
+- name: Rollback Pulumi deployment
+  if: failure() && steps.rag_test.outcome == 'failure'
+  working-directory: ./infra/pulumi_stacks
+  run: |
+    echo "RAG tests failed — rolling back to pre-deploy state"
+    pulumi stack import --stack dev --file /tmp/pulumi_pre_deploy.json
+    pulumi up --yes --stack dev
+```
+
+Pulumi diffs the restored snapshot against the current live GCP state and destroys or recreates only the resources that changed, ensuring the live RAG service always reflects a validated deployment.
+
+**Rollback flow summary:**
+
+```
+Test fails after pulumi up
+       │
+       ▼
+pulumi stack import (restore pre-deploy snapshot)
+       │
+       ▼
+pulumi up (reconcile GCP infra to match snapshot)
+       │
+       ▼
+Infrastructure restored to last known good state
+       │
+       ▼
+GitHub Issue created — team notified
+```
 
 ### 11.7 Environment Variables
 
@@ -880,15 +934,15 @@ All environment variables required for CI:
 
 | Variable | Value |
 |----------|-------|
-| `GCP_PROJECT_ID` | `mlops-test-project-486922` |
-| `MODEL_PROJECT_ID` | `mlops-test-project-486922` |
-| `MODEL_PROJECT_NUMBER` | `903943936563` |
-| `GCP_REGION` | `us-central1` |
-| `FIRESTORE_DATABASE` | `clinical-trials-db` |
-| `VECTOR_SEARCH_ENDPOINT_ID` | `1573491299300933632` |
-| `DEPLOYED_INDEX_ID` | `clinical_trials_dev` |
-| `MEDGEMMA_DEDICATED_DNS` | `mg-endpoint-*.prediction.vertexai.goog` |
-| `DATABRICKS_HOST` | `https://dbc-b74b3877-4d11.cloud.databricks.com` |
+| `GCP_PROJECT_ID` | `<YOUR_GCP_PROJECT_ID>` |
+| `MODEL_PROJECT_ID` | `<GCP_PROJECT_ID_FOR_MODEL>` |
+| `MODEL_PROJECT_NUMBER` | `<MODEL_PROJECT_NUMBER` |
+| `GCP_REGION` | `<GCP_REGION>` |
+| `FIRESTORE_DATABASE` | `<FIRESTORE_DB>` |
+| `VECTOR_SEARCH_ENDPOINT_ID` | `<VECTOR_SEARCH_ENDPOINT>` |
+| `DEPLOYED_INDEX_ID` | `<INDEX_ID>` |
+| `MEDGEMMA_DEDICATED_DNS` | `<MEDGEMMA_DNS>` |
+| `DATABRICKS_HOST` | `<DATABRICKS_HOST>` |
 
 **GitHub Actions Secrets (Settings → Secrets):**
 
@@ -896,9 +950,8 @@ All environment variables required for CI:
 |--------|-------------|
 | `GCP_SA_KEY` | GCP service account JSON key |
 | `MEDGEMMA_ENDPOINT_ID` | MedGemma dedicated endpoint ID |
-| `DATABRICKS_TOKEN` | Databricks PAT with files scope |
+| `DATABRICKS_TOKEN` | Databricks PAT with workspace access scope |
 | `PULUMI_CONFIG_PASSPHRASE` | Pulumi stack encryption passphrase |
-
 ---
 
 ## 12. Testing
@@ -1202,13 +1255,13 @@ pip install python-dotenv mlflow databricks-sdk
 ```bash
 gcloud auth login
 gcloud auth application-default login
-gcloud config set project mlops-test-project-486922
-gcloud auth application-default set-quota-project mlops-test-project-486922
+gcloud config set project project-1e322b00-efe1-41f8-8d9
+gcloud auth application-default set-quota-project project-1e322b00-efe1-41f8-8d9
 ```
 
 **CI (GitHub Actions):**
 
-A service account JSON key is used via the `GCP_SA_KEY` secret. The service account requires the following IAM roles on `mlops-test-project-486922`:
+A service account JSON key is used via the `GCP_SA_KEY` secret. The service account requires the following IAM roles on `project-1e322b00-efe1-41f8-8d9`:
 
 | Role | Purpose |
 |------|---------|
@@ -1225,8 +1278,8 @@ A service account JSON key is used via the `GCP_SA_KEY` secret. The service acco
 Create a `.env` file in the repo root:
 ```bash
 # GCP
-GCP_PROJECT_ID=mlops-test-project-486922
-MODEL_PROJECT_ID=mlops-test-project-486922
+GCP_PROJECT_ID=project-1e322b00-efe1-41f8-8d9
+MODEL_PROJECT_ID=project-1e322b00-efe1-41f8-8d9
 MODEL_PROJECT_NUMBER=903943936563
 GCP_REGION=us-central1
 FIRESTORE_DATABASE=clinical-trials-db
@@ -1263,7 +1316,7 @@ gcloud services enable \
   cloudbuild.googleapis.com \
   pubsub.googleapis.com \
   storage.googleapis.com \
-  --project=mlops-test-project-486922
+  --project=project-1e322b00-efe1-41f8-8d9
 ```
 
 ### 14.6 MedGemma Deployment
@@ -1271,12 +1324,12 @@ gcloud services enable \
 MedGemma is deployed from the Vertex AI Model Garden:
 ```bash
 # List available models
-gcloud ai models list --region=us-central1 --project=mlops-test-project-486922
+gcloud ai models list --region=us-central1 --project=project-1e322b00-efe1-41f8-8d9
 
 # Deploy to existing endpoint
 gcloud ai endpoints deploy-model <ENDPOINT_ID> \
   --region=us-central1 \
-  --project=mlops-test-project-486922 \
+  --project=project-1e322b00-efe1-41f8-8d9 \
   --model=<MODEL_ID> \
   --display-name=medgemma-4b-it \
   --traffic-split=0=100 \
@@ -1286,7 +1339,7 @@ gcloud ai endpoints deploy-model <ENDPOINT_ID> \
 # Get the dedicated DNS for .env
 gcloud ai endpoints describe <ENDPOINT_ID> \
   --region=us-central1 \
-  --project=mlops-test-project-486922 \
+  --project=project-1e322b00-efe1-41f8-8d9 \
   --format="value(dedicatedEndpointDns)"
 ```
 
@@ -1294,7 +1347,7 @@ gcloud ai endpoints describe <ENDPOINT_ID> \
 ```bash
 gcloud ai endpoints undeploy-model <ENDPOINT_ID> \
   --region=us-central1 \
-  --project=mlops-test-project-486922 \
+  --project=project-1e322b00-efe1-41f8-8d9 \
   --deployed-model-id=<DEPLOYED_MODEL_ID>
 ```
 
@@ -1318,7 +1371,7 @@ gcloud config get-value project
 # Verify Firestore access
 python -c "
 from google.cloud import firestore
-db = firestore.Client(project='mlops-test-project-486922', database='clinical-trials-db')
+db = firestore.Client(project='project-1e322b00-efe1-41f8-8d9', database='clinical-trials-db')
 docs = list(db.collection('clinical_trials_diabetes').limit(1).stream())
 print(f'Firestore OK: {len(docs)} doc(s)')
 "
@@ -1367,8 +1420,8 @@ To replicate the CI pipeline, configure the following in your GitHub repo:
 
 | Variable | Value |
 |----------|-------|
-| `GCP_PROJECT_ID` | `mlops-test-project-486922` |
-| `MODEL_PROJECT_ID` | `mlops-test-project-486922` |
+| `GCP_PROJECT_ID` | `project-1e322b00-efe1-41f8-8d9` |
+| `MODEL_PROJECT_ID` | `project-1e322b00-efe1-41f8-8d9` |
 | `MODEL_PROJECT_NUMBER` | `903943936563` |
 | `GCP_REGION` | `us-central1` |
 | `FIRESTORE_DATABASE` | `clinical-trials-db` |
@@ -1392,7 +1445,7 @@ Create two labels: `ci-failure` and `rag-pipeline`
 | `Input lacks sufficient clinical structure` | Guardrail rejecting valid input | Check that patient summary contains at least 2 of: age, sex, condition, clinical data |
 | `Recommendation exceeds max length` | MedGemma generating verbose output | Not a blocker — guardrail replaces with safe fallback message |
 | MLflow artifacts not uploading | Databricks PAT missing files scope | Regenerate PAT with Workspace access |
-| `CONSUMER_INVALID` | Embedding call going to wrong project | Run `gcloud auth application-default set-quota-project mlops-test-project-486922` |
+| `CONSUMER_INVALID` | Embedding call going to wrong project | Run `gcloud auth application-default set-quota-project project-1e322b00-efe1-41f8-8d9` |
 
 
 

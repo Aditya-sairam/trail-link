@@ -23,7 +23,7 @@ from google.cloud import monitoring_v3
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 
 # ── Custom metric types — must be registered in Cloud Monitoring ───────────────
 METRIC_AVG_SCORE        = "custom.googleapis.com/triallink/rag_avg_score"

@@ -60,7 +60,7 @@ EVAL_PROJECT_ID    = os.getenv("EVAL_PROJECT_ID", "triallink-eval-001")
 EVAL_REGION        = os.getenv("EVAL_REGION", "us-central1")
 EVAL_MAX_PATIENTS  = int(os.getenv("EVAL_MAX_PATIENTS", "5"))
 GEMINI_MODEL       = "gemini-2.5-flash"
-EVAL_BUCKET        = os.getenv("EVAL_BUCKET", "triallink-eval-results-dev-mlops-test-project-486922")  # GCS bucket for eval results
+EVAL_BUCKET        = os.getenv("EVAL_BUCKET", "triallink-eval-results-dev-project-1e322b00-efe1-41f8-8d9")  # GCS bucket for eval results
 
 OUTPUT_DIR         = "eval_results"
 PATIENT_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "patients")
