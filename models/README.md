@@ -175,7 +175,6 @@ Add here why this model , why best
 ## 4. Vectorization
 
 > **PDF Reference**: Supports Section 2.1 (Loading Data) and Section 8.1 (RAG Format)
-> **Owner**: Multiple teammates
 
 Vectorization converts clinical trial documents and patient summaries into numerical embeddings for semantic similarity search.
 
@@ -240,7 +239,6 @@ Patient Summary
 ## 5. Guardrails
 
 > **PDF Reference**: Supports Section 2.3 (Model Validation) and Section 8.4 (Model Validation Code)
-> **Owner**: Sanika
 > **Location**: Integrated in `models/rag_service.py`
 
 TrialLink implements a multi-layered guardrail system to ensure patient safety, prevent hallucination, and block prompt injection. Guardrails run both before (input) and after (output) the core RAG pipeline.
@@ -346,8 +344,6 @@ This metadata is captured in test results and logged to MLflow for tracking guar
 Validation is performed at two levels: automated pipeline validation (quantitative metrics) and LLM-as-Judge evaluation (qualitative assessment).
 
 ### 6.1 Automated Pipeline Validation
-
-**Owner**: Swarali
 **Location**: `tests/test_rag_pipeline.py`
 
 The test pipeline runs the full RAG pipeline against 13 diverse test patients and validates results against predefined thresholds.
@@ -451,7 +447,6 @@ Aggregates the per-trial verdicts into:
 ## 7. Model Bias Detection
 
 > **PDF Reference**: Section 6 (Model Bias Detection Using Slicing Techniques) and Section 2.4
-> **Owner**: Swarali
 > **Location**: `tests/test_rag_pipeline.py` — `compute_slice_metrics()` and `check_bias_alert()`
 
 ### 7.1 Slicing Strategy
@@ -564,7 +559,6 @@ Detailed results are in Section 9.
 ## 9. Model Sensitivity Analysis
 
 > **PDF Reference**: Section 5 — Model Sensitivity Analysis
-> **Owner**: Swarali
 > **Location**: `tests/test_sensitivity_analysis.py`, `tests/test_feature_ablation.py`
 
 Sensitivity analysis determines how the pipeline's performance changes with respect to different hyperparameters and input features. Two analyses were performed:
@@ -652,7 +646,6 @@ All five features have importance above 0.5, meaning the pipeline uses informati
 ## 10. Experiment Tracking and Results
 
 > **PDF Reference**: Section 4 — Experiment Tracking and Results
-> **Owner**: Swarali
 > **Tracking Platform**: MLflow on Databricks
 > **Databricks URL**: `https://dbc-b74b3877-4d11.cloud.databricks.com`
 
@@ -886,8 +879,6 @@ All environment variables required for CI:
 ---
 
 ## 12. Testing
-
-> **Owner**: Swarali
 > **Location**: `tests/`
 
 ### 12.1 Test Files Overview
