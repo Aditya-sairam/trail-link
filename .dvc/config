@@ -2,4 +2,4 @@
     remote = gcs-storage
 ['remote "gcs-storage"']
     url = gs://dvc-storage-clinical-trials
-    projectname = mlops-test-project-486922
+    projectname = project-1e322b00-efe1-41f8-8d9

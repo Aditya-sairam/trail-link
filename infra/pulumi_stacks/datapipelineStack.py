@@ -16,7 +16,7 @@ class DataPipelineStack:
         self._create_artifact_registry()
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
-        # self._deploy_index_to_endpoint() 
+        self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
         
@@ -29,12 +29,13 @@ class DataPipelineStack:
 
         self.dvc_bucket = gcp.storage.Bucket(
             f"dvc-storage-clinical-trials",
-            name=f"dvc-storage-clinical-trials",
+            name=f"dvc-storage-clinical-trials-{self.project_id}",
             location="US",
             versioning=gcp.storage.BucketVersioningArgs(
                 enabled=True,
             ),
-            force_destroy=True
+            force_destroy=True,
+            uniform_bucket_level_access=True
         )
 
     def _create_bucket(self) -> gcp.storage.Bucket:
@@ -99,7 +100,7 @@ class DataPipelineStack:
                     "max_instance_count": 5,
                 },
                 "containers": [{
-                    "image": "us-central1-docker.pkg.dev/mlops-test-project-486922/data-pipeline-repo-dev/datapipeline-api:latest",
+                    "image": "us-central1-docker.pkg.dev/project-1e322b00-efe1-41f8-8d9/data-pipeline-repo-dev/datapipeline-api:latest",
                     "ports": {
                         "container_port": 8081,
                     },

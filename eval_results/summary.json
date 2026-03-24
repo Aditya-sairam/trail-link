@@ -1,13 +1,49 @@
 {
   "evaluation_run": {
-    "timestamp": "2026-03-23T01:24:37.186004+00:00",
+    "timestamp": "2026-03-23T17:41:34.257986+00:00",
     "gemini_model": "gemini-2.5-flash",
     "eval_project": "triallink-eval-001",
-    "patients_evaluated": 0,
-    "gemini_calls_total": 0
+    "patients_evaluated": 2,
+    "gemini_calls_total": 4
   },
   "average_overall_score": null,
-  "verdict_distribution": {},
-  "guardrail_status_distribution": {},
-  "top_recommendations": []
+  "verdict_distribution": {
+    "NOT ELIGIBLE": 4,
+    "NEEDS REVIEW": 4,
+    "ELIGIBLE": 2
+  },
+  "guardrail_status_distribution": {
+    "flagged": 2
+  },
+  "top_recommendations": [
+    {
+      "patient_id": "e354328b-73fb-4343-a509-a1a310854cfb",
+      "top_trial": "",
+      "score": null,
+      "guardrail_status": "flagged"
+    },
+    {
+      "patient_id": "e354328b-73fb-4343-a509-a1a310854cfb",
+      "top_trial": "",
+      "score": null,
+      "guardrail_status": "flagged"
+    }
+  ],
+  "alert_breaches": [
+    {
+      "metric": "eligible_percentage",
+      "value": 20.0,
+      "threshold": 30.0,
+      "severity": "MEDIUM",
+      "message": "Only 20.0% of trials marked ELIGIBLE \u2014 below 30.0% threshold"
+    },
+    {
+      "metric": "patients_evaluated",
+      "value": 2,
+      "threshold": 3,
+      "severity": "MEDIUM",
+      "message": "Only 2 patients evaluated \u2014 pipeline may have partially failed"
+    }
+  ],
+  "alert_status": "ALERT"
 }

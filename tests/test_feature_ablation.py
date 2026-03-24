@@ -50,7 +50,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-GCP_PROJECT  = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+GCP_PROJECT  = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 GCP_REGION   = os.getenv("GCP_REGION", "us-central1")
 RESULTS_DIR  = os.path.join(os.path.dirname(__file__), "test_results", "ablation")
 
@@ -363,7 +363,7 @@ if __name__ == "__main__":
 # logger = logging.getLogger(__name__)
 
 # # ── Config ─────────────────────────────────────────────────────────────────────
-# GCP_PROJECT  = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+# GCP_PROJECT  = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 # GCP_REGION   = os.getenv("GCP_REGION", "us-central1")
 # RESULTS_DIR  = os.path.join(os.path.dirname(__file__), "test_results", "ablation")
 

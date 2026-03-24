@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 PATIENT_DB     = "patient-db-dev"
 RESULTS_DIR    = os.path.join(os.path.dirname(__file__), "test_results")
 
@@ -538,7 +538,7 @@ if __name__ == "__main__":
 # logger = logging.getLogger(__name__)
 
 # # ── Config ─────────────────────────────────────────────────────────────────────
-# GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+# GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 # PATIENT_DB     = "patient-db-dev"
 # RESULTS_DIR    = os.path.join(os.path.dirname(__file__), "test_results")
 

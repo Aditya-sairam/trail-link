@@ -75,6 +75,7 @@ class ModelPipelineStack:
             "function-storage-bucket",
             location=self.region,
             project=self.project_id,
+            uniform_bucket_level_access=True
         )
 
     def _create_eval_bucket(self):

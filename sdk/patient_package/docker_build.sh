@@ -8,7 +8,7 @@
 set -e  # Exit immediately if a command fails
 
 # ===== CONFIG =====
-PROJECT_ID="mlops-test-project-486922"
+PROJECT_ID="project-1e322b00-efe1-41f8-8d9"
 REGION="us-central1"
 REPO_NAME="patient-api-repo-dev"
 IMAGE_NAME="patient-api"

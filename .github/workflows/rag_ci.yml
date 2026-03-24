@@ -18,7 +18,7 @@ env:
   MLFLOW_TRACKING_URI:         databricks
   DATABRICKS_HOST:             ${{ vars.DATABRICKS_HOST }}
   DATABRICKS_TOKEN:            ${{ secrets.DATABRICKS_TOKEN }}
-  PULUMI_BACKEND_URL:          gs://pulumi-state-mlops-test-project-486922
+  PULUMI_BACKEND_URL:          gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
   PULUMI_CONFIG_PASSPHRASE:    ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
   ENABLE_INPUT_LLM_GUARDRAIL:  "true"
   ENABLE_OUTPUT_LLM_GUARDRAIL: "true"
@@ -102,7 +102,7 @@ jobs:
         run: pip install pulumi
 
       - name: Login to Pulumi GCS backend
-        run: pulumi login gs://pulumi-state-mlops-test-project-486922
+        run: pulumi login gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
 
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
@@ -216,7 +216,7 @@ jobs:
 #   MLFLOW_TRACKING_URI:       databricks
 #   DATABRICKS_HOST:           ${{ vars.DATABRICKS_HOST }}
 #   DATABRICKS_TOKEN:          ${{ secrets.DATABRICKS_TOKEN }}
-#   PULUMI_BACKEND_URL:        gs://pulumi-state-mlops-test-project-486922
+#   PULUMI_BACKEND_URL:        gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
 #   PULUMI_CONFIG_PASSPHRASE:  ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
 
 # jobs:
@@ -252,7 +252,7 @@ jobs:
 
 #       # ── Login to GCS backend ──────────────────────────────────────────────
 #       - name: Login to Pulumi GCS backend
-#         run: pulumi login gs://pulumi-state-mlops-test-project-486922
+#         run: pulumi login gs://pulumi-state-project-1e322b00-efe1-41f8-8d9
 
 #       # ── Snapshot state BEFORE deploy ──────────────────────────────────────
 #       - name: Snapshot pre-deploy Pulumi state

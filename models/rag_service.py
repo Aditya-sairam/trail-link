@@ -69,13 +69,13 @@ logger = logging.getLogger(__name__)
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "mlops-test-project-486922")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "project-1e322b00-efe1-41f8-8d9")
 MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "triallink-eval-001")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
     "VECTOR_SEARCH_ENDPOINT_ID",
-    "projects/903943936563/locations/us-central1/indexEndpoints/1573491299300933632",
+    "projects/650611980577/locations/us-central1/indexEndpoints/1447531247222915072",
 )
 DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "clinical_trials_dev")
 
@@ -85,7 +85,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-833ffeb4-d9e8-42e3-ae54-2a1a22a5777e",
+    "mg-endpoint-c9a1997f-3c82-47e8-a7fa-17edd7713d4d",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
@@ -768,7 +768,7 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
         import requests as http_requests
 
         region = os.getenv("GCP_REGION", "us-central1")
-        project_number = "903943936563" 
+        project_number = "650611980577" 
         endpoint_id = MEDGEMMA_ENDPOINT_ID
 
         # ✅ Dedicated domain (MANDATORY)
