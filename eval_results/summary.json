@@ -1,0 +1,13 @@
+{
+  "evaluation_run": {
+    "timestamp": "2026-03-23T01:24:37.186004+00:00",
+    "gemini_model": "gemini-2.5-flash",
+    "eval_project": "triallink-eval-001",
+    "patients_evaluated": 0,
+    "gemini_calls_total": 0
+  },
+  "average_overall_score": null,
+  "verdict_distribution": {},
+  "guardrail_status_distribution": {},
+  "top_recommendations": []
+}

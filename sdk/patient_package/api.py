@@ -2,15 +2,19 @@ from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List
+import sys
+sys.path.insert(0, "/opt/airflow/repo/pipelines/dags/src")
+# from models.rag_service import rag_pipeline_for_patient
 import uuid
 import json
 from datetime import datetime
 from data_models import Patient
 from google.cloud import firestore
-from auth import verify_token, require_admin, require_patient_or_admin
+from auth import  require_admin, require_patient_or_admin
 import os
 import logging
-from embeddinngs import get_patient_embedding, query_vector_search
+from google.cloud import pubsub_v1
+import json
 
 # ── Logging setup — makes logs visible in Cloud Run console ──
 logging.basicConfig(
@@ -39,7 +43,7 @@ def get_db():
     if _firestore_db is None:
         _firestore_db = firestore.Client(
             project=os.getenv("GCP_PROJECT_ID"),
-            database=os.getenv("FIRESTORE_DATABASE", "(default)")
+            database=os.getenv("FIRESTORE_DATABASE", "patient-db-dev")
         )
     return _firestore_db
 
@@ -68,7 +72,6 @@ async def create_patient(
         raise HTTPException(status_code=500, detail=str(e))
 
     return patient
-
 
 # ── Get single patient — admin can get any, patient can only get their own
 @app.get("/patients/{patient_id}", response_model=Patient)
@@ -152,23 +155,91 @@ async def get_my_profile(token: dict = Depends(require_patient_or_admin)):
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
 
+TRIAL_SUGGESTIONS_COLLECTION = "trial_suggestions"
+
 @app.get("/me/trial-suggestions")
 async def get_trial_suggestions(token: dict = Depends(require_patient_or_admin)):
+    """
+    Finds the patient profile, marks status as processing in Firestore,
+    then publishes patient_id to Pub/Sub for the RAG Cloud Function to pick up.
+    """
+    db = firestore.Client(
+            project=os.getenv("GCP_PROJECT_ID"),
+            database=os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-suggestions-db")
+        )
     docs = get_db().collection(PATIENTS_COLLECTION)\
         .where("demographics.firebase_uid", "==", token["uid"])\
         .limit(1).stream()
 
     for doc in docs:
-        text_summary = Patient(**doc.to_dict()).to_text_summary()
-        embedding = get_patient_embedding(text_summary)
-        trial_ids = query_vector_search(embedding)
+        patient    = Patient(**doc.to_dict())
+        patient_id = patient.demographics.patient_id
+
+        # Step 1 — Mark as processing immediately so frontend knows request is in flight
+        db.collection(TRIAL_SUGGESTIONS_COLLECTION).document(patient_id).set({
+            "status"      : "processing",
+            "patient_id"  : patient_id,
+            "requested_at": datetime.now().isoformat()
+        })
+
+        # Step 2 — Publish to Pub/Sub
+        publisher  = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path(
+            os.getenv("GCP_PROJECT_ID", ""),
+            os.getenv("RAG_PIPELINE_TOPIC", "clinical-trial-suggestions-request")
+        )
+        message = json.dumps({"patient_id": patient_id}).encode("utf-8")
+        future  = publisher.publish(topic_path, message)
+        msg_id  = future.result()
+
+        logger.info(f"Published patient {patient_id} to Pub/Sub — message ID: {msg_id}")
+
         return {
-            "summary": text_summary,
-            "matched_trials": trial_ids,        # ← list of NCT IDs
-            "total_matches": len(trial_ids)
+            "status"    : "processing",
+            "message"   : "Your trial matching request has been submitted.",
+            "patient_id": patient_id,
+            "message_id": msg_id
         }
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
+
+
+@app.get("/me/trial-suggestions/results")
+async def get_trial_suggestions_results(token: dict = Depends(require_patient_or_admin)):
+    """
+    Polls Firestore for the latest trial suggestion results for this patient.
+    Frontend calls this repeatedly until status = "completed" or "failed".
+
+    Returns:
+        { status: "not_started" }                          — never requested
+        { status: "processing", requested_at: "..." }      — in flight
+        { status: "completed", recommendation: "...",
+          retrieved_trials: [...], generated_at: "..." }   — done
+        { status: "failed", error: "..." }                 — something went wrong
+    """
+    db = firestore.Client(
+        project=os.getenv("GCP_PROJECT_ID"),
+        database=os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-suggestions-db")
+    )
+    # Get patient_id from firebase_uid
+    docs = get_db().collection(PATIENTS_COLLECTION)\
+        .where("demographics.firebase_uid", "==", token["uid"])\
+        .limit(1).stream()
+
+    patient_id = None
+    for doc in docs:
+        patient_id = Patient(**doc.to_dict()).demographics.patient_id
+
+    if not patient_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile found.")
+
+    # Fetch results from Firestore
+    result_doc = db.collection(TRIAL_SUGGESTIONS_COLLECTION).document(patient_id).get()
+
+    if not result_doc.exists:
+        return {"status": "not_started"}
+
+    return result_doc.to_dict()
 
 
 @app.get("/health")

@@ -29,7 +29,7 @@ PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 FIRESTORE_DB = os.getenv("FIRESTORE_DB") or os.getenv("FIRESTORE_DATABASE")
 GOOGLE_CREDS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-CONDITIONS = ["diabetes"]
+CONDITIONS = ["diabetes", "breast_cancer"]
 log = logging.getLogger(__name__)
 
 

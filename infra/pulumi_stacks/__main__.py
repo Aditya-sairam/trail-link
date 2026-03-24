@@ -6,6 +6,7 @@ import pulumi
 import pulumi_gcp as gcp 
 from patientStack import PatientStack
 from datapipelineStack import DataPipelineStack
+from modelPipelineStack import ModelPipelineStack
 
 gcp_config = pulumi.Config("gcp")
 project_id = gcp_config.require("project")
@@ -23,6 +24,12 @@ pipeline_stack = DataPipelineStack(
     name=stack_name,
     project_id=project_id,
     region=region,
+)
+
+model_stack = ModelPipelineStack(
+    name=stack_name,
+    project_id=project_id,
+    region=region
 )
 
 pulumi.export("deployment_summary",{

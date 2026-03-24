@@ -92,6 +92,7 @@ class FHIRParser:
         
         return Demographics(
             patient_id=patient_id,
+            firebase_uid=None,
             date_of_birth=birth_date,
             age=age,
             gender=gender,

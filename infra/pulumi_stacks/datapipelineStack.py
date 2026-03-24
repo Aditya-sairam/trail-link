@@ -1,6 +1,7 @@
 import pulumi
 import pulumi_gcp as gcp
 from typing import Optional
+from pulumi_command import local
 
 
 class DataPipelineStack:
@@ -15,9 +16,10 @@ class DataPipelineStack:
         self._create_artifact_registry()
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
-        self._deploy_index_to_endpoint() 
+        # self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
+        
         self._grant_storage_access()
         self._grant_vertex_ai_access()  
         self._grant_access_to_firestore()    
@@ -26,12 +28,13 @@ class DataPipelineStack:
         self._export_outputs()
 
         self.dvc_bucket = gcp.storage.Bucket(
-            f"{self.name}-dvc-storage",
-            name=f"dvc-storage-clinical-trials-{self.project_id}",
+            f"dvc-storage-clinical-trials",
+            name=f"dvc-storage-clinical-trials",
             location="US",
             versioning=gcp.storage.BucketVersioningArgs(
                 enabled=True,
             ),
+            force_destroy=True
         )
 
     def _create_bucket(self) -> gcp.storage.Bucket:
@@ -80,6 +83,7 @@ class DataPipelineStack:
             project=self.project_id,
             opts=self.opts,
         )
+    
 
     def _create_airflow_cloudrun_service(self):
         return gcp.cloudrunv2.Service(
@@ -119,6 +123,7 @@ class DataPipelineStack:
             ),
         )
 
+ 
     def _keep_alive_ping_for_airflow(self):
         return gcp.cloudscheduler.Job(
             "airflow-keep-alive-ping",
@@ -203,13 +208,8 @@ class DataPipelineStack:
         )
 
     def _deploy_index_to_endpoint(self):
-        """
-        Deploys the index to the endpoint so it can be queried.
-        Without this step, the index exists but can't be searched.
-        """
         gcp.vertex.AiIndexEndpointDeployedIndex(
             f"{self.name}-deployed-trials-index",
-            # project=self.project_id,
             region=self.region,
             index_endpoint=self.vector_endpoint.id,
             index=self.vector_index.id,
@@ -217,6 +217,8 @@ class DataPipelineStack:
             display_name=f"clinical-trials-{self.name}",
             opts=pulumi.ResourceOptions(
                 depends_on=[self.vector_endpoint, self.vector_index],
+                retain_on_delete=True,      # ← never delete real resource
+                ignore_changes=["*"],       # ← never try to update it
             ),
         )
 
@@ -232,9 +234,15 @@ class DataPipelineStack:
             opts=pulumi.ResourceOptions(parent=self.airflow_service),
         )
 
+
+    
+
     def _export_outputs(self):
         pulumi.export("RAW_CLINICAL_TRIALS_STORAGE", self.pipeline_bucket.name)
         pulumi.export("CLINICAL_TRIALS_FIRESTORE", self.firestore_db.name)
         pulumi.export(f"{self.name}_pipeline_sa", self.service_account.email)
         pulumi.export(f"{self.name}_vector_search_index_id", self.vector_index.id)
         pulumi.export(f"{self.name}_vector_search_endpoint_id", self.vector_endpoint.id)
+        # pulumi.export(f"{self.name}_medgemma_endpoint_id", self.medgemma_endpoint.id)
+
+    

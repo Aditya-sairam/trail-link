@@ -152,3 +152,10 @@ zc.lockfile==4.0
 google-cloud-aiplatform>=1.38.0
 vertexai>=1.38.0
 functions-framework==3.*
+flask
+google-cloud-discoveryengine==0.17.0
+numpy==2.4.3
+google-cloud-firestore
+google-cloud-discoveryengine
+google-cloud-aiplatform
+functions-framework

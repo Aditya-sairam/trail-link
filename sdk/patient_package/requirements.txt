@@ -18,3 +18,4 @@ uvicorn==0.40.0
 google-cloud-firestore
 firebase_admin
 vertexai==1.71.1
+google-cloud-pubsub==2.36.0

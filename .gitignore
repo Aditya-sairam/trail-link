@@ -32,6 +32,9 @@ data/
 logs/
 mlruns/
 
+# test outputs
+test_results/
+
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbsynthea-with-dependencies.jar
