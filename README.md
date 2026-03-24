@@ -32,6 +32,10 @@ Details on how to execute the pipeline are in this ReadME.md
   
 
 ---
+## Embedding Model
+We use `text-embedding-005`, Vertex AI's most recent stable embedding model, which outputs 768-dimensional vectors — a balance between retrieval quality and storage/compute efficiency. It is natively supported by Vertex AI Vector Search, keeping the entire pipeline within GCP with no cross-cloud API calls. The `RETRIEVAL_DOCUMENT` task type is optimized for asymmetric search (short query → long document), which is exactly the pattern a clinical trial RAG system requires. It is also compatible with MedGemma, making it a natural fit for the medical domain.
+
+> **Note on alternatives:** We evaluated `text-embedding-large-exp-03-07` (3072-dim), but adopting it would require re-embedding all trials, rebuilding the Vertex AI Vector Search index for 3072 dimensions, and it is not yet a stable release — so we defer it as a future upgrade path.
 
 ## Running Locally
 
