@@ -116,9 +116,32 @@ At inference time, the RAG pipeline (`models/rag_service.py`) reads from Firesto
 
 **PDF Reference**: Section 2.2
 
-> _To be documented by the RAG pipeline teammate._
+Since TrialLink's core task is **clinical eligibility reasoning over structured medical text**, selecting the right language model required a thorough evaluation of models across capability, deployment constraints, and domain fit.
 
-MedGemma 4B-IT was selected as the recommendation LLM. It is deployed as a pre-built model from the Vertex AI Model Garden on a dedicated endpoint with the following configuration:
+#### Models Considered
+
+| Model | Type | Strengths | Limitations for TrialLink |
+|-------|------|-----------|--------------------------|
+| **GPT-4o** (OpenAI) | General-purpose LLM | Strong reasoning, broad medical knowledge | Proprietary API — no GCP-native deployment, data privacy concerns for PHI |
+| **Gemini 1.5 Pro** (Google) | General-purpose LLM | Native Vertex AI support, long context | Not fine-tuned on clinical/biomedical data; weaker on eligibility criterion parsing |
+| **BioMistral-7B** | Biomedical fine-tuned | Open-source, biomedical pretraining | Limited instruction-following for structured output |
+| **Med-PaLM 2** (Google) | Medical LLM | Strong clinical benchmarks | Restricted access, not available for standard deployment |
+| **Llama 3.1 8B Instruct** (Meta) | General instruction-tuned | Open-source, deployable on Vertex AI | No medical domain specialization; poor performance on eligibility criterion matching in testing |
+| **MedGemma 4B-IT** (Google DeepMind) | Medical-domain fine-tuned | Purpose-built for clinical reasoning | Smaller context window than GPT-4o |
+
+#### Why MedGemma 4B-IT Was Chosen
+
+After evaluating the above candidates, **MedGemma 4B-IT** was selected as the recommendation model for the following reasons:
+
+1. **Clinical domain specialization** — MedGemma is explicitly fine-tuned on medical literature, clinical notes, and biomedical text, making it significantly more accurate at parsing eligibility criteria (inclusion/exclusion logic, drug interactions, diagnosis codes) compared to general-purpose models.
+
+2. **Instruction-following on structured prompts** — TrialLink's prompt requires the model to go criterion-by-criterion and output structured eligibility verdicts. MedGemma 4B-IT consistently followed this structure in testing, whereas general-purpose models of similar size tended to produce generic or inconsistent outputs.
+
+3. **PHI-safe deployment** — Deploying on a dedicated Vertex AI endpoint ensures patient data never leaves the GCP project boundary, satisfying data governance requirements for healthcare applications.
+
+4. **Cost-performance balance** — The 4B parameter variant delivers clinically sound reasoning at a fraction of the cost of GPT-4o or Gemini 1.5 Pro, making it viable for per-patient inference at scale.
+
+#### Deployment Configuration
 
 | Parameter | Value |
 |-----------|-------|
