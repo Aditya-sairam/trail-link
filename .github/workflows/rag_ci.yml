@@ -3,7 +3,7 @@ name: TrialLink RAG Pipeline CI
 on:
   push:
     branches:
-      - main-backup
+      - main
 
 env:
   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
