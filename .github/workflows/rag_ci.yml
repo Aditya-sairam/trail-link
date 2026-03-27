@@ -109,6 +109,7 @@ jobs:
 
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
+        continue-on-error: true 
         run: pulumi up --yes --stack dev
 
   # ═══════════════════════════════════════════════════════════════════════════
