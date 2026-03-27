@@ -16,7 +16,7 @@ class DataPipelineStack:
         self._create_artifact_registry()
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
-        self._deploy_index_to_endpoint() 
+        # self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
         
