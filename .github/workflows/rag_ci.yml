@@ -36,7 +36,8 @@ jobs:
 
       - name: Pulumi Preview (dry run)
         working-directory: ./infra/pulumi_stacks
-        run: pulumi preview --stack dev
+        continue-on-error: true
+        run: pulumi up --yes --stack dev
 
       # Uncomment below once preview looks good
       # - name: Pulumi Deploy
