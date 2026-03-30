@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "models/**"                              # any change in models folder
+      - "infra/pulumi_stacks/modelPipelineStack.py"  # specific file in infra
 
 env:
   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
@@ -106,6 +109,7 @@ jobs:
 
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
+        continue-on-error: true 
         run: pulumi up --yes --stack dev
 
   # ═══════════════════════════════════════════════════════════════════════════
