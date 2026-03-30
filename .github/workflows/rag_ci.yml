@@ -3,7 +3,7 @@ name: TrialLink RAG Pipeline CI
 on:
   push:
     branches:
-      - main
+      - pulumi-actions-test-branch
     paths:
       - "models/**"                              # any change in models folder
       - "infra/pulumi_stacks/modelPipelineStack.py"  # specific file in infra
