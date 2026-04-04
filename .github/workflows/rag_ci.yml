@@ -11,7 +11,7 @@ on:
 env:
   GCP_PROJECT_ID:              ${{ vars.GCP_PROJECT_ID }}
   MODEL_PROJECT_ID:            ${{ vars.MODEL_PROJECT_ID }}
-  MODEL_PROJECT_NUMBER:        ${{ vars.MODEL_PROJECT_NUMBER }}
+  MODEL_PROJECT_NUMBER:        ${{ secrets.MODEL_PROJECT_NUMBER }}
   MEDGEMMA_ENDPOINT_ID:        ${{ secrets.MEDGEMMA_ENDPOINT_ID }}
   MEDGEMMA_DEDICATED_DNS:      ${{ vars.MEDGEMMA_DEDICATED_DNS }}
   GCP_REGION:                  ${{ vars.GCP_REGION }}
