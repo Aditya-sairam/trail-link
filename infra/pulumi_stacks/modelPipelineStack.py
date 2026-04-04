@@ -15,7 +15,7 @@ class ModelPipelineStack:
         self.project_id = project_id
         self.region = region
         self.opts = opts or pulumi.ResourceOptions()
-        self.model = self._deploy_gemini_model()
+        # self.model = self._deploy_gemini_model()
         self.service_account      = self._create_service_account()
         self.function_bucket      = self._create_function_bucket()
         self.eval_bucket          = self._create_eval_bucket()

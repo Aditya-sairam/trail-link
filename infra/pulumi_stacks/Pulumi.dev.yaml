@@ -1,6 +1,6 @@
 encryptionsalt: v1:i4KCm5lMBHo=:v1:LT8E3RmuGCX0RJHI:IN9fxVozD8+srLk2tQ/7z851Wz16Ow==
 config:
-  gcp:project: project-1e322b00-efe1-41f8-8d9
+  gcp:project: triallink-eval-001
   gcp:region: us-central1
   deploy_model: false
   deploy_pipeline: true
