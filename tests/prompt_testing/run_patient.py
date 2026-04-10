@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from models.rag_service import rag_pipeline_for_patient
 
 # Patient uploaded via frontend — swap this ID to test different patients
-PATIENT_ID = "94a45350-5770-48ff-8002-75beaa9f99eb"
+PATIENT_ID = "b889f1a4-10b7-495e-a10e-1a79a597b3c1"
 
 # ── Output setup ──────────────────────────────────────────────────────────────
 RESULTS_DIR = os.path.join(os.getcwd(), "tests", "prompt_testing", "results")
@@ -152,36 +152,32 @@ analysis_text = re.sub(r"^(Output|Prompt)\s*:\s*\n?", "", analysis_text.strip(),
 # ── Normalise: insert newlines before section markers (MedGemma omits them) ──
 _MARKERS = [
     "VERDICT:", "Inclusion Criteria Check:", "Exclusion Criteria Check:",
-    "Medication/Allergy Conflicts:", "Comorbidity Flags:",
+    "Matched Criteria:", "Concerns:",
     "Intervention Summary:", "Clinical Rationale:",
 ]
 for _m in _MARKERS:
     analysis_text = analysis_text.replace(_m, f"\n{_m}")
 analysis_text = re.sub(r"(\*\*Trial\s+\d+)", r"\n\1", analysis_text)
 
-# ── Parse each criterion bullet into (status, criterion, reason) ──────────────
-_NO_INFO_PHRASES = ("no information", "not mentioned", "not specified", "not provided",
-                    "not stated", "not available", "not described")
-
-def parse_criteria_lines(lines: list[str]) -> tuple[list[str], list[str]]:
-    """Split criterion bullets into (detailed, no_info_names).
-    detailed  = lines that have real patient evidence (shown in full).
-    no_info   = short criterion names where only 'no info' was noted (collapsed).
-    """
-    detailed, no_info = [], []
+# ── helpers ───────────────────────────────────────────────────────────────────
+def render_bullet_lines(lines: list[str]):
+    seen = set()
     for line in lines:
-        stripped = line.strip().lstrip("- ").strip()
-        if not stripped:
-            continue
-        reason_lower = stripped.lower()
-        if any(p in reason_lower for p in _NO_INFO_PHRASES):
-            # Extract just the criterion name (before the ✓/✗)
-            name = re.split(r"[✓✗]", stripped)[0].strip().rstrip(":").strip()
-            # Keep it short
-            no_info.append(name[:80] + ("…" if len(name) > 80 else ""))
+        s = line.strip().lstrip("- •*").strip()
+        if s and s.lower() != "none" and s not in seen:
+            seen.add(s)
+            out(f"    • {s}")
+
+def word_wrap(text: str, width: int = 66):
+    words, buf = text.split(), []
+    for w in words:
+        if sum(len(x) + 1 for x in buf) + len(w) > width:
+            out(f"    {' '.join(buf)}")
+            buf = [w]
         else:
-            detailed.append(stripped)
-    return detailed, no_info
+            buf.append(w)
+    if buf:
+        out(f"    {' '.join(buf)}")
 
 # ── Split and render per-trial blocks ─────────────────────────────────────────
 raw_blocks   = re.split(r"(?=\*\*Trial\s+\d+)", analysis_text)
@@ -189,16 +185,14 @@ trial_blocks = [b.strip() for b in raw_blocks if re.search(r"\*\*Trial\s+\d+", b
 
 out()
 divider()
-out("TRIAL-BY-TRIAL ANALYSIS  (MedGemma)")
+out("TRIAL-BY-TRIAL ANALYSIS  (Gemini 2.5 Flash)")
 divider()
 
 if trial_blocks:
     for block in trial_blocks:
-        # Header
         hm = re.match(r"\*\*(Trial\s+\d+[^*]*)\*\*", block)
         trial_header = hm.group(1).strip() if hm else block.splitlines()[0]
 
-        # Verdict
         vm = re.search(r"VERDICT\s*:\s*(\w+)", block, re.IGNORECASE)
         verdict_key   = vm.group(1).upper() if vm else "UNKNOWN"
         verdict_label = VERDICT_LABEL.get(verdict_key, verdict_key)
@@ -208,82 +202,46 @@ if trial_blocks:
         out(f"  VERDICT : {verdict_label}")
         out(f"{'─' * W}")
 
-        # Split block into named sections
+        # Parse sections
         sections: dict[str, list[str]] = {}
         current = None
         for line in block.splitlines():
             s = line.strip()
             if re.match(r"\*\*Trial\s+\d+", s) or re.match(r"VERDICT\s*:", s, re.IGNORECASE):
                 continue
-            matched_section = None
-            for marker in _MARKERS[1:]:   # skip VERDICT
+            hit = None
+            for marker in _MARKERS[1:]:
                 if s.startswith(marker):
-                    matched_section = marker.rstrip(":")
-                    sections.setdefault(matched_section, [])
-                    remainder = s[len(marker):].strip()
-                    if remainder:
-                        sections[matched_section].append(remainder)
-                    current = matched_section
+                    hit = marker.rstrip(":")
+                    sections.setdefault(hit, [])
+                    rest = s[len(marker):].strip()
+                    if rest:
+                        sections[hit].append(rest)
+                    current = hit
                     break
-            if matched_section is None and current and s and s != "---":
+            if hit is None and current and s and s != "---":
                 sections[current].append(s)
 
-        # Inclusion Criteria
-        inc_lines = sections.get("Inclusion Criteria Check", [])
-        if inc_lines:
-            out(f"\n  INCLUSION CRITERIA")
-            detailed, no_info = parse_criteria_lines(inc_lines)
-            for d in detailed:
-                out(f"    • {d}")
-            if no_info:
-                out(f"    • Not enough patient data to assess ({len(no_info)} criteria):")
-                for n in no_info:
-                    out(f"        – {n}")
+        matched = sections.get("Matched Criteria", [])
+        if matched:
+            out(f"\n  WHY THIS TRIAL MATCHES")
+            render_bullet_lines(matched)
 
-        # Exclusion Criteria
-        exc_lines = sections.get("Exclusion Criteria Check", [])
-        if exc_lines:
-            out(f"\n  EXCLUSION CRITERIA")
-            detailed, no_info = parse_criteria_lines(exc_lines)
-            for d in detailed:
-                out(f"    • {d}")
-            if no_info:
-                out(f"    • Not enough patient data to assess ({len(no_info)} criteria):")
-                for n in no_info:
-                    out(f"        – {n}")
+        concerns = sections.get("Concerns", [])
+        non_empty = [c for c in concerns if c.strip().lstrip("-• ").lower() not in ("", "none")]
+        if non_empty:
+            out(f"\n  CONCERNS / OPEN QUESTIONS")
+            render_bullet_lines(non_empty)
 
-        # Medication/Allergy
-        med = " ".join(sections.get("Medication/Allergy Conflicts", [])).strip()
-        if med and med.lower() not in ("none", "n/a", "[none]"):
-            out(f"\n  MEDICATION / ALLERGY CONFLICTS")
-            out(f"    {med}")
-
-        # Comorbidity Flags
-        comor = " ".join(sections.get("Comorbidity Flags", [])).strip()
-        if comor and comor.lower() not in ("none", "n/a", "[none]"):
-            out(f"\n  COMORBIDITY FLAGS")
-            out(f"    {comor}")
-
-        # Intervention Summary
         intv = " ".join(sections.get("Intervention Summary", [])).strip()
         if intv:
-            out(f"\n  INTERVENTION")
+            out(f"\n  WHAT THE PATIENT WOULD DO")
             out(f"    {intv[:300]}{'…' if len(intv) > 300 else ''}")
 
-        # Clinical Rationale  ← the key "why" section
         rat = " ".join(sections.get("Clinical Rationale", [])).strip()
         if rat:
             out(f"\n  CLINICAL RATIONALE")
-            # Word-wrap at ~66 chars
-            words, line_buf = rat.split(), []
-            for w in words:
-                if sum(len(x) + 1 for x in line_buf) + len(w) > 66:
-                    out(f"    {'  '.join(line_buf)}")
-                    line_buf = [w]
-                else:
-                    line_buf.append(w)
-            if line_buf:
-                out(f"    {'  '.join(line_buf)}")
+            word_wrap(rat)
 
     out(f"\n{'─' * W}")
 else:
@@ -297,6 +255,80 @@ if dm:
     divider("-")
     out(dm.group(1).strip())
     divider("-")
+
+# ── LLM as Judge ──────────────────────────────────────────────────────────────
+out()
+section("LLM AS JUDGE  (MedGemma — independent second opinion)")
+
+# Build a map of Gemini's verdicts by trial number for comparison
+gemini_verdicts: dict[int, str] = {}
+for block in trial_blocks:
+    nm = re.search(r"\*\*Trial\s+(\d+)", block)
+    vm = re.search(r"VERDICT\s*:\s*(\w+)", block, re.IGNORECASE)
+    if nm and vm:
+        gemini_verdicts[int(nm.group(1))] = vm.group(1).upper()
+
+VERDICT_ICON = {
+    "ELIGIBLE":   "✓  ELIGIBLE",
+    "INELIGIBLE": "✗  INELIGIBLE",
+    "BORDERLINE": "~  BORDERLINE",
+}
+MATCH_LABEL = {True: "✓ matches Gemini", False: "⚠ differs from Gemini"}
+
+medgemma_judgment = result.get("medgemma_judgment") or ""
+if not medgemma_judgment:
+    out("  (Judge output unavailable)")
+elif medgemma_judgment.startswith("(Judge unavailable") or medgemma_judgment.startswith("(MedGemma"):
+    out(f"  {medgemma_judgment}")
+else:
+    current_ref = None
+    current_num = None
+    current_verdict = None
+    current_lines = []
+
+    def flush_judge_block():
+        if current_ref and current_verdict:
+            gemini_v = gemini_verdicts.get(current_num, "")
+            match = (current_verdict == gemini_v)
+            icon  = VERDICT_ICON.get(current_verdict, current_verdict)
+            out(f"\n{'─' * W}")
+            out(f"  {current_ref}  →  MedGemma: {icon}")
+            if gemini_v:
+                out(f"             Gemini:   {VERDICT_ICON.get(gemini_v, gemini_v)}   [{MATCH_LABEL[match]}]")
+            out(f"{'─' * W}")
+            for cl in current_lines:
+                word_wrap(cl, width=66)
+
+    expanded_lines = []
+    for raw_line in medgemma_judgment.splitlines():
+        parts = re.split(r"(?=\bTrial\s+\d+\s*[:\*])", raw_line)
+        expanded_lines.extend(parts)
+
+    for raw_line in expanded_lines:
+        line = re.sub(r"\*+", "", raw_line).strip()
+        if not line:
+            continue
+        m = re.match(
+            r"(Trial\s+(\d+))\s*:?\s*(ELIGIBLE|INELIGIBLE|BORDERLINE)\s*[—\-]+\s*(.*)",
+            line, re.IGNORECASE
+        )
+        if m:
+            flush_judge_block()
+            current_ref     = m.group(1)
+            current_num     = int(m.group(2))
+            current_verdict = m.group(3).upper()
+            current_lines   = [m.group(4).strip()] if m.group(4).strip() else []
+        elif current_ref:
+            current_lines.append(line)
+
+    flush_judge_block()
+    if not current_ref:
+        out()
+        out("  (Could not parse judge output — raw response below:)")
+        for raw_line in medgemma_judgment.splitlines():
+            if raw_line.strip():
+                out(f"  {raw_line.strip()}")
+    out()
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 _txt_file.close()
