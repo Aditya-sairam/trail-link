@@ -110,7 +110,9 @@ DISCLAIMER_TEXT = (
 SUPPORTED_CONDITIONS = {"diabetes", "breast cancer", "breast_cancer"}
 
 BANNED_OUTPUT_PATTERNS = [
-    r"\b\d+(\.\d+)?\s?(mg|mcg|g|ml|units|tablets|capsules)\b",
+    # Removed the generic mg/ml pattern — it fires on patient's own medication names
+    # (e.g. "Metformin 500 MG") which MedGemma legitimately cites.
+    # Prescriptive action verbs remain:
     r"\btake\s+\d+",
     r"\bprescribe\b",
     r"\bstart medication\b",
@@ -690,6 +692,57 @@ def rerank_trials(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# STEP 3.6 — CONDITION-SUBTYPE FILTER
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mapping: if patient summary contains any of the "patient_has" terms,
+# remove any trial whose conditions+title ONLY mention the "exclude_if_only" terms
+# (i.e. the trial is for a different subtype and doesn't also cover the patient's type).
+_SUBTYPE_FILTER_RULES = [
+    {
+        "patient_has":     ["diabetes mellitus type 2", "type 2 diabetes", "t2dm", "t2d"],
+        "exclude_if_only": ["type 1 diabetes", "type 1 diabetes mellitus", "t1dm",
+                            "cystic fibrosis-related diabetes", "cfrd"],
+        "must_not_contain_patient_type": ["type 2", "t2"],
+    },
+    {
+        "patient_has":     ["diabetes mellitus type 2", "type 2 diabetes", "t2dm", "t2d"],
+        # Prediabetes-only trials: exclude when primary condition is prediabetes
+        # and the trial does NOT mention type 2 diabetes as an included population
+        "exclude_if_only": ["prediabetic state", "pre diabetes", "prediabetes"],
+        "must_not_contain_patient_type": ["type 2 diabetes", "t2d"],
+    },
+]
+
+def filter_mismatched_subtypes(patient_summary: str, trials: list[dict]) -> list[dict]:
+    """Remove trials clearly targeting a disease subtype different from the patient's."""
+    summary_lower = patient_summary.lower()
+    filtered = []
+    for trial in trials:
+        conditions_lower = str(trial.get("conditions", "")).lower()
+        title_lower = (trial.get("study_title") or trial.get("title", "")).lower()
+        combined = f"{conditions_lower} {title_lower}"
+
+        skip = False
+        for rule in _SUBTYPE_FILTER_RULES:
+            patient_matches = any(p in summary_lower for p in rule["patient_has"])
+            if not patient_matches:
+                continue
+            trial_has_wrong_subtype = any(e in combined for e in rule["exclude_if_only"])
+            trial_also_covers_patient = any(p in combined for p in rule["must_not_contain_patient_type"])
+            if trial_has_wrong_subtype and not trial_also_covers_patient:
+                logger.info(
+                    f"Subtype filter: dropping {trial.get('nct_number')} "
+                    f"(conditions: {conditions_lower[:80]})"
+                )
+                skip = True
+                break
+        if not skip:
+            filtered.append(trial)
+    return filtered
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — GENERATE RECOMMENDATION
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -715,11 +768,11 @@ def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) 
         f"  Condition     : {_trim(t.get('conditions'), _CO_LIMIT)}\n"
         f"  Phase         : {t.get('phase', 'N/A')}\n"
         f"  Status        : {t.get('recruitment_status', 'N/A')}\n"
-        f"  Eligibility   : {_trim(t.get('eligibility_criteria'), _EC_LIMIT)}\n"
-        f"  Min Age       : {t.get('min_age', 'N/A')}\n"
-        f"  Max Age       : {t.get('max_age', 'N/A')}\n"
+        f"  Age Range     : {t.get('min_age', 'N/A')} – {t.get('max_age', 'N/A')}\n"
         f"  Sex           : {t.get('sex', 'N/A')}\n"
-        f"  Interventions : {_trim(t.get('interventions'), _IV_LIMIT)}\n"
+        f"  Eligibility Criteria:\n{_trim(t.get('eligibility_criteria'), _EC_LIMIT)}\n"
+        f"  [END OF ELIGIBILITY CRITERIA]\n"
+        f"  Intervention  : {_trim(t.get('interventions'), _IV_LIMIT)}\n"
         f"  Summary       : {_trim(t.get('brief_summary'), _SU_LIMIT)}\n"
         f"  URL           : {t.get('study_url', 'N/A')}"
         for i, t in enumerate(retrieved_trials)
@@ -729,18 +782,33 @@ def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) 
         "Use only the provided patient profile and retrieved clinical trial context. "
         "Do not invent trials, eligibility criteria, medications, dosages, or treatments. "
         "Do not provide medical advice, prescribing advice, or treatment recommendations. "
-        "Only assess trial eligibility and explain your reasoning based on the provided evidence.\n"
-        "Rigorously evaluate patient eligibility for each trial using this exact process:\n"
-        "1. INCLUSION CHECK — go criterion by criterion. Does the patient meet EVERY inclusion criterion? "
-        "Cite the criterion text and the patient-specific evidence.\n"
-        "2. EXCLUSION CHECK — go criterion by criterion. Does the patient trigger ANY exclusion criterion? "
-        "A single triggered exclusion means INELIGIBLE. Name the exact criterion.\n"
-        "3. MEDICATION CHECK — do any current medications conflict with trial protocols or exclusion criteria?\n"
-        "4. ALLERGY CHECK — do known allergies conflict with the trial intervention?\n"
-        "5. COMORBIDITY CHECK — do active diagnoses qualify as exclusion conditions?\n"
-        "Verdict rules: ELIGIBLE only if ALL inclusions are met AND ZERO exclusions triggered. "
-        "INELIGIBLE if any exclusion applies. "
-        "BORDERLINE if criteria are ambiguous or require clinician review."
+        "Only assess trial eligibility and explain your reasoning based on the provided evidence.\n\n"
+        "CRITICAL — Numeric threshold rules (apply these exactly):\n"
+        "- Criterion '≥ X': patient MEETS it if their value is X or higher. "
+        "Example: criterion ≥6%, patient HbA1c 7.8% → 7.8 ≥ 6 → MET.\n"
+        "- Criterion '≤ X': patient MEETS it if their value is X or lower.\n"
+        "- Criterion 'X to Y' or 'between X and Y': patient MEETS it if their value is within [X, Y].\n"
+        "Never reverse the direction of an inequality.\n\n"
+        "CRITICAL — Diagnosis name synonyms (treat these as identical):\n"
+        "'Diabetes mellitus type 2 (disorder)', 'Type 2 diabetes mellitus', 'Type 2 diabetes', "
+        "'T2DM', 'T2D' all refer to the same condition — mark as MET when a patient has any of these.\n"
+        "'Breast cancer', 'Malignant neoplasm of breast' — treat as equivalent.\n\n"
+        "Evaluate patient eligibility for each trial using this process:\n"
+        "1. INCLUSION CHECK — Only mark ✗ Not Met when the patient profile EXPLICITLY contradicts "
+        "the criterion. If patient data is silent, mark ✓ Likely Met (assume eligible unless contradicted).\n"
+        "2. EXCLUSION CHECK — Only mark ✗ TRIGGERED when the patient profile EXPLICITLY matches "
+        "an exclusion criterion. If not mentioned, mark ✓ Not triggered.\n"
+        "3. MEDICATION CHECK — flag only confirmed conflicts with the patient's listed medications.\n"
+        "4. ALLERGY CHECK — flag only confirmed conflicts with listed allergies.\n"
+        "5. COMORBIDITY CHECK — flag only active diagnoses that are explicit exclusion conditions.\n\n"
+        "Verdict rules:\n"
+        "- ELIGIBLE: patient clearly meets the primary inclusion criteria and no exclusions triggered.\n"
+        "- BORDERLINE: patient meets key criteria but some data is missing or one criterion is "
+        "ambiguous — clinician review recommended.\n"
+        "- INELIGIBLE: patient EXPLICITLY fails a definitive inclusion criterion "
+        "(wrong disease type, age clearly outside stated range, wrong sex for sex-restricted trial) "
+        "OR an exclusion is clearly triggered.\n"
+        "Prefer BORDERLINE over INELIGIBLE whenever data is incomplete or ambiguous."
     )
 
     user_prompt = f"""PATIENT PROFILE:
@@ -953,6 +1021,19 @@ def rag_pipeline(patient_summary: str) -> dict:
             reason=scope_reason,
             patient_summary=patient_summary,
             guardrail_stage="retrieval_scope",
+            pii_hits=pii_hits,
+        )
+
+    # Step 3.6: Remove trials for the wrong disease subtype
+    logger.info("Step 3.6: Filtering mismatched subtypes...")
+    reranked_trials = filter_mismatched_subtypes(patient_summary, reranked_trials)
+    logger.info(f"After subtype filter: {len(reranked_trials)} trials remain")
+
+    if not reranked_trials:
+        return safe_guardrail_response(
+            reason="No matching trials remain after subtype filtering",
+            patient_summary=patient_summary,
+            guardrail_stage="subtype_filter",
             pii_hits=pii_hits,
         )
 
