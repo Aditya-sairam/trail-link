@@ -98,7 +98,7 @@ GUARDRAIL_MODEL = os.getenv("GUARDRAIL_MODEL", "gemini-2.5-flash")
 ENABLE_INPUT_LLM_GUARDRAIL = os.getenv("ENABLE_INPUT_LLM_GUARDRAIL", "true").lower() == "true"
 ENABLE_OUTPUT_LLM_GUARDRAIL = os.getenv("ENABLE_OUTPUT_LLM_GUARDRAIL", "true").lower() == "true"
 MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "12000"))
-MAX_OUTPUT_CHARS = int(os.getenv("MAX_OUTPUT_CHARS", "16000"))
+MAX_OUTPUT_CHARS = int(os.getenv("MAX_OUTPUT_CHARS", "40000"))
 
 DISCLAIMER_TEXT = (
     "Disclaimer: This AI-generated output is for informational purposes only and "
@@ -112,8 +112,6 @@ SUPPORTED_CONDITIONS = {"diabetes", "breast cancer", "breast_cancer"}
 BANNED_OUTPUT_PATTERNS = [
     r"\b\d+(\.\d+)?\s?(mg|mcg|g|ml|units|tablets|capsules)\b",
     r"\btake\s+\d+",
-    r"\bdose\b",
-    r"\bdosage\b",
     r"\bprescribe\b",
     r"\bstart medication\b",
     r"\bincrease medication\b",
@@ -700,21 +698,29 @@ import requests
 import google.auth
 from google.auth.transport.requests import Request
 
+_EC_LIMIT = 1500   # chars per trial for eligibility_criteria
+_IV_LIMIT = 300    # chars per trial for interventions
+_SU_LIMIT = 300    # chars per trial for brief_summary
+_CO_LIMIT = 150    # chars per trial for conditions (can be huge lists)
+
+def _trim(val, limit: int) -> str:
+    s = str(val) if val and str(val).strip() not in ("", "nan", "None") else "N/A"
+    return s[:limit] + "…" if len(s) > limit else s
+
 def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) -> str:
     context = "\n\n".join([
         f"Trial {i + 1}:\n"
         f"  NCT ID        : {t.get('nct_number', 'N/A')}\n"
         f"  Title         : {t.get('study_title') or t.get('title', 'N/A')}\n"
-        f"  Condition     : {t.get('conditions', 'N/A')}\n"
-        f"  Disease       : {t.get('disease', 'N/A')}\n"
+        f"  Condition     : {_trim(t.get('conditions'), _CO_LIMIT)}\n"
         f"  Phase         : {t.get('phase', 'N/A')}\n"
         f"  Status        : {t.get('recruitment_status', 'N/A')}\n"
-        f"  Eligibility   : {t.get('eligibility_criteria', 'N/A')}\n"
+        f"  Eligibility   : {_trim(t.get('eligibility_criteria'), _EC_LIMIT)}\n"
         f"  Min Age       : {t.get('min_age', 'N/A')}\n"
         f"  Max Age       : {t.get('max_age', 'N/A')}\n"
         f"  Sex           : {t.get('sex', 'N/A')}\n"
-        f"  Interventions : {t.get('interventions', 'N/A')}\n"
-        f"  Summary       : {t.get('brief_summary', 'N/A')}\n"
+        f"  Interventions : {_trim(t.get('interventions'), _IV_LIMIT)}\n"
+        f"  Summary       : {_trim(t.get('brief_summary'), _SU_LIMIT)}\n"
         f"  URL           : {t.get('study_url', 'N/A')}"
         for i, t in enumerate(retrieved_trials)
     ])
@@ -760,7 +766,15 @@ Intervention Summary: [what the patient would undergo if enrolled]
 Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or disqualification]
 ---"""
 
-    prompt = system_prompt+user_prompt
+    # Gemma instruction-tuned models require explicit turn markers to generate
+    # rather than echo the prompt back.
+    prompt = (
+        f"<start_of_turn>user\n"
+        f"{system_prompt}\n\n"
+        f"{user_prompt}\n"
+        f"<end_of_turn>\n"
+        f"<start_of_turn>model\n"
+    )
 
     try:
         import google.auth
@@ -790,7 +804,7 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
             "instances": [
                 {
                     "prompt": prompt,
-                    "max_tokens": 400,
+                    "max_tokens": 4096,
                     "temperature": 0.2
                 }
             ]
@@ -802,14 +816,25 @@ Clinical Rationale: [2–3 sentences connecting patient profile to trial fit or 
 
     # Case 1: result is a dict
         if isinstance(result, dict):
-            return result.get("generated_text") or result.get("output") or str(result)
-
-        # Case 2: result is already a string (YOUR CASE)
+            text = result.get("generated_text") or result.get("output") or str(result)
+        # Case 2: result is already a string
         elif isinstance(result, str):
-            return result
+            text = result
+        else:
+            text = str(result)
 
-# Fallback
-        return str(result)
+        # MedGemma may echo the full prompt and place the generated text after
+        # "<start_of_turn>model" or "Output:".  Extract only the generated part.
+        for marker in ("<start_of_turn>model", "Output:"):
+            if marker in text:
+                text = text.split(marker, 1)[1]
+                break
+
+        # Strip any leading/trailing turn-end tokens or separator lines
+        text = re.sub(r"^[\s\-─<>]+", "", text).strip()
+        text = re.sub(r"<end_of_turn>.*", "", text, flags=re.DOTALL).strip()
+
+        return text
     except Exception as e:
         logger.error(f"MedGemma generation failed: {e}")
         raise
@@ -934,6 +959,7 @@ def rag_pipeline(patient_summary: str) -> dict:
     # Step 4: Generate recommendation
     logger.info("Step 4: Generating recommendation...")
     recommendation = generate_recommendation(patient_summary, reranked_trials)
+    raw_medgemma_output = recommendation  # preserve before any guardrail replaces it
 
     # Step 5A: Policy checks
     logger.info("Step 5A: Running policy-based output guardrails...")
@@ -1005,6 +1031,7 @@ def rag_pipeline(patient_summary: str) -> dict:
         "candidates_before_rerank": candidates,
         "retrieved_trials": reranked_trials,
         "recommendation": recommendation,
+        "raw_medgemma_output": raw_medgemma_output,
         "guardrail": guardrail_meta,
     }
 

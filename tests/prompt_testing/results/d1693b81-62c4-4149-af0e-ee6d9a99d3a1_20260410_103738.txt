@@ -1,0 +1,163 @@
+
+Running RAG pipeline for patient: d1693b81-62c4-4149-af0e-ee6d9a99d3a1
+
+========================================================================
+PATIENT SUMMARY
+========================================================================
+Patient is a 48-year-old female White. Active diagnoses: Malignant neoplasm of breast (disorder), Stage II breast cancer (finding), Estrogen receptor positive tumor (finding), HER2 negative carcinoma of breast (finding). Recent observations: Size of tumor: 2.3 cm; ECOG performance status: 0 - Fully active, able to carry on all pre-disease performance without restriction; Tobacco smoking status: Never smoked tobacco (finding); Physical activity (observable entity): Moderate physical activity, 2-3 times per week. Smoking status: Never smoked tobacco (finding).
+
+========================================================================
+GUARDRAIL  ⚠  FLAGGED
+========================================================================
+  Reason : No JSON object found in model response: {
+  "is_safe
+  Flag   : input_llm_guardrail_error: No JSON object found in model response: {
+  "is_valid": true,
+  Flag   : output_llm_guardrail_error: No JSON object found in model response: {
+  "is_safe
+
+========================================================================
+TOP 5 RETRIEVED TRIALS  (from 20 candidates before rerank)
+========================================================================
+
+  [1] NCT06831955
+      Title       : LifEStyle Intervention to Enhance Efficacy of Neoadjuvant Therapy in Patients With Triple Negative Breast Cancer
+      Condition   : Triple Negative Breast Cancer (TNBC), Early Setting
+      Phase       : PHASE2          Recruitment : RECRUITING
+      Age range   : 18 Years – ?   Sex : ALL
+      Keywords    : Triple Negative Breast Cancer; Lifestyle Intervention; Neoadjuvant treatment; Fasting-Mimicking Diet
+      Summary     : LESLIE is a multicentric randomized controlled trial in patients with triple negative breast cancer receiving neoadjuvant chemo/immunotherapy (NAT). This trial investigates the hypothesis that adding 
+      URL         : https://clinicaltrials.gov/study/NCT06831955
+
+  [2] NCT05969860
+      Title       : At-Home Cancer Directed Therapy Versus in Clinic for the Treatment of Patients With Advanced Cancer
+      Condition   : Advanced Anal Carcinoma; Advanced Biliary Tract Carcinoma; Advanced Bladder Carcinoma; Advanced Breast Carcinoma; Advanced Carcinoid Tumor; Advanced Cervical Carcinoma; Advanced Colorectal Carcinoma; Advanced Gastric Carcinoma; Advanced Glioblastoma; Advanced Head and Neck Carcinoma; Advanced HER2 Positive Breast Carcinoma; Advanced Lung Carcinoma; Advanced Lung Small Cell Carcinoma; Advanced Malignant Germ Cell Tumor; Advanced Malignant Solid Neoplasm; Advanced Neuroendocrine Carcinoma; Advanced Ovarian Carcinoma; Advanced Pancreatic Carcinoma; Advanced Prostate Small Cell Neuroendocrine Carcinoma; Advanced Prostate Carcinoma; Hematopoietic and Lymphoid System Neoplasm; Multiple Myeloma; Myelodysplastic Syndrome; Advanced Basal Cell Carcinoma; Advanced Cholangiocarcinoma; Advanced Endometrial Carcinoma; Advanced Esophageal Carcinoma; Advanced Fallopian Tube Carcinoma; Advanced Hepatocellular Carcinoma; Advanced Liver Carcinoma; Advanced Lymphoma; Advanced Malignant Testicular Neoplasm; Advanced Melanoma; Advanced Merkel Cell Carcinoma; Advanced Penile Carcinoma; Advanced Primary Malignant Central Nervous System Neoplasm; Advanced Renal Cell Carcinoma; Advanced Sarcoma; Advanced Skin Squamous Cell Carcinoma; Advanced Urethral Carcinoma; Advanced Vaginal Carcinoma; Advanced Vulvar Carcinoma; Advanced Appendix Carcinoma
+      Phase       : PHASE2          Recruitment : RECRUITING
+      Age range   : 18 Years – ?   Sex : ALL
+      Summary     : This clinical trial studies the effect of cancer directed therapy given at-home versus in the clinic for patients with cancer that may have spread from where it first started to nearby tissue, lymph n
+      URL         : https://clinicaltrials.gov/study/NCT05969860
+
+  [3] NCT05432856
+      Title       : Impact of Metabolic Health Patterns And Breast Cancer Over Time in Women
+      Condition   : Cardiovascular Diseases; Cardiovascular Morbidity; Metabolic Disease
+      Phase       : N/A             Recruitment : RECRUITING
+      Age range   : 18 Years – ?   Sex : FEMALE
+      Summary     : Background \& Rationale: Breast cancer (BC) is the most commonly diagnosed malignancy in women worldwide (2.1 million diagnoses in 2018, 25% of new cancer cases). In Canada, early stage BC mortality r
+      URL         : https://clinicaltrials.gov/study/NCT05432856
+
+  [4] NCT07259304
+      Title       : Social Health, Activity Behaviors, and Quality of Life Among Young Adult Cancer Survivors
+      Condition   : Anatomic Stage I Breast Cancer AJCC v8; Anatomic Stage IA Breast Cancer AJCC v8; Anatomic Stage IB Breast Cancer AJCC v8; Anatomic Stage II Breast Cancer AJCC v8; Anatomic Stage IIA Breast Cancer AJCC v8; Anatomic Stage IIB Breast Cancer AJCC v8; Anatomic Stage III Breast Cancer AJCC v8; Anatomic Stage IIIA Breast Cancer AJCC v8; Anatomic Stage IIIB Breast Cancer AJCC v8; Anatomic Stage IIIC Breast Cancer AJCC v8; Central Nervous System Neoplasm; Clinical Stage I Cutaneous Melanoma AJCC v8; Clinical Stage IA Cutaneous Melanoma AJCC v8; Clinical Stage IB Cutaneous Melanoma AJCC v8; Clinical Stage II Cutaneous Melanoma AJCC v8; Clinical Stage IIA Cutaneous Melanoma AJCC v8; Clinical Stage IIB Cutaneous Melanoma AJCC v8; Clinical Stage IIC Cutaneous Melanoma AJCC v8; Clinical Stage III Cutaneous Melanoma AJCC v8; Hodgkin Lymphoma; Malignant Bone Neoplasm; Malignant Brain Neoplasm; Malignant Solid Neoplasm; Malignant Testicular Neoplasm; Non-Hodgkin Lymphoma; Pathologic Stage I Cutaneous Melanoma AJCC v8; Pathologic Stage IA Cutaneous Melanoma AJCC v8; Pathologic Stage IB Cutaneous Melanoma AJCC v8; Pathologic Stage II Cutaneous Melanoma AJCC v8; Pathologic Stage IIA Cutaneous Melanoma AJCC v8; Pathologic Stage IIB Cutaneous Melanoma AJCC v8; Pathologic Stage IIC Cutaneous Melanoma AJCC v8; Pathologic Stage III Cutaneous Melanoma AJCC v8; Pathologic Stage IIIA Cutaneous Melanoma AJCC v8; Pathologic Stage IIIB Cutaneous Melanoma AJCC v8; Pathologic Stage IIIC Cutaneous Melanoma AJCC v8; Pathologic Stage IIID Cutaneous Melanoma AJCC v8; Prognostic Stage I Breast Cancer AJCC v8; Prognostic Stage IA Breast Cancer AJCC v8; Prognostic Stage IB Breast Cancer AJCC v8; Prognostic Stage II Breast Cancer AJCC v8; Prognostic Stage IIA Breast Cancer AJCC v8; Prognostic Stage IIB Breast Cancer AJCC v8; Prognostic Stage III Breast Cancer AJCC v8; Prognostic Stage IIIA Breast Cancer AJCC v8; Prognostic Stage IIIB Breast Cancer AJCC v8; Prognostic Stage IIIC Breast Cancer AJCC v8; Stage I Cervical Cancer AJCC v8; Stage I Colorectal Cancer AJCC v8; Stage I Differentiated Thyroid Gland Carcinoma AJCC v8; Stage I Ovarian Cancer AJCC v8; Stage I Thyroid Gland Medullary Carcinoma AJCC v8; Stage I Uterine Corpus Cancer AJCC v8; Stage IA Cervical Cancer AJCC v8; Stage IA Ovarian Cancer AJCC v8; Stage IA Uterine Corpus Cancer AJCC v8; Stage IA1 Cervical Cancer AJCC v8; Stage IA2 Cervical Cancer AJCC v8; Stage IB Cervical Cancer AJCC v8; Stage IB Ovarian Cancer AJCC v8; Stage IB Uterine Corpus Cancer AJCC v8; Stage IB1 Cervical Cancer AJCC v8; Stage IB2 Cervical Cancer AJCC v8; Stage IC Ovarian Cancer AJCC v8; Stage II Cervical Cancer AJCC v8; Stage II Colorectal Cancer AJCC v8; Stage II Differentiated Thyroid Gland Carcinoma AJCC v8; Stage II Ovarian Cancer AJCC v8; Stage II Thyroid Gland Medullary Carcinoma AJCC v8; Stage II Uterine Corpus Cancer AJCC v8; Stage IIA Cervical Cancer AJCC v8; Stage IIA Colorectal Cancer AJCC v8; Stage IIA Ovarian Cancer AJCC v8; Stage IIA1 Cervical Cancer AJCC v8; Stage IIA2 Cervical Cancer AJCC v8; Stage IIB Cervical Cancer AJCC v8; Stage IIB Colorectal Cancer AJCC v8; Stage IIB Ovarian Cancer AJCC v8; Stage IIC Colorectal Cancer AJCC v8; Stage III Cervical Cancer AJCC v8; Stage III Colorectal Cancer AJCC v8; Stage III Differentiated Thyroid Gland Carcinoma AJCC v8; Stage III Ovarian Cancer AJCC v8; Stage III Thyroid Gland Medullary Carcinoma AJCC v8; Stage III Uterine Corpus Cancer AJCC v8; Stage IIIA Cervical Cancer AJCC v8; Stage IIIA Colorectal Cancer AJCC v8; Stage IIIA Ovarian Cancer AJCC v8; Stage IIIA Uterine Corpus Cancer AJCC v8; Stage IIIA1 Ovarian Cancer AJCC v8; Stage IIIA2 Ovarian Cancer AJCC v8; Stage IIIB Cervical Cancer AJCC v8; Stage IIIB Colorectal Cancer AJCC v8; Stage IIIB Ovarian Cancer AJCC v8; Stage IIIB Uterine Corpus Cancer AJCC v8; Stage IIIC Colorectal Cancer AJCC v8; Stage IIIC Ovarian Cancer AJCC v8; Stage IIIC Uterine Corpus Cancer AJCC v8; Stage IIIC1 Uterine Corpus Cancer AJCC v8; Stage IIIC2 Uterine Corpus Cancer AJCC v8
+      Phase       : N/A             Recruitment : RECRUITING
+      Age range   : 18 Years – 39 Years   Sex : ALL
+      Summary     : This study assesses how personal relationships (such as friendships, family relationships, or romantic partners) influence the physical activity (exercise) and well-being of young adult cancer survivo
+      URL         : https://clinicaltrials.gov/study/NCT07259304
+
+  [5] NCT06480513
+      Title       : Cancer Of the BReast Asanas Study (COBRA)
+      Condition   : Breast Cancer
+      Phase       : N/A             Recruitment : RECRUITING
+      Age range   : ? – ?   Sex : FEMALE
+      Summary     : Rationale: Women with hormone-receptor positive breast cancer are usually prescribed endocrine therapy for a period of 5-10 years. This treatment reduces the risk of recurrence and improves overall su
+      URL         : https://clinicaltrials.gov/study/NCT06480513
+
+  NOTE: Output guardrail fired — showing raw MedGemma output below.
+  Guardrail reason: No JSON object found in model response: {
+  "is_safe
+
+========================================================================
+TRIAL-BY-TRIAL ANALYSIS  (MedGemma)
+========================================================================
+
+────────────────────────────────────────────────────────────────────────
+  Output:
+  VERDICT : UNKNOWN
+────────────────────────────────────────────────────────────────────────
+    Output:
+
+────────────────────────────────────────────────────────────────────────
+  Trial 1: NCT06831955 — LifEStyle Intervention to Enhance Efficacy of Neoadjuvant Therapy in Patients With Triple Negative Breast Cancer
+  VERDICT : ✗  INELIGIBLE
+────────────────────────────────────────────────────────────────────────
+
+  Inclusion Criteria Check:- The patient has a biopsy-confirmed diagnosis of stage II-III TNBC: ✗ Not Met — The patient has Stage II breast cancer, not Stage II-III TNBC.- Patients with tumor stage T1cN1-2, T2N0-N2, T3N0-N2, T4N0-N2: ✗ Not Met — The patient's tumor stage is not specified as T1-T4.- ER and PR negative is defined as an absent or minimal (≤10%) expression of oestrogen and progesterone receptors and absence of HER2 protein over-expression per ASCO/CAP-guidelines: ✗ Not Met — The patient's tumor is Estrogen receptor positive (ER+).- All histological subtypes are eligible, including but not limited to invasive breast cancer of no special type (NST) , invasive lobular carcinoma (ILC) etc: ✗ Not Met — The patient has Estrogen receptor positive tumor (ER+), which is not TNBC.- WHO/ECOG performance status of grade 0-1: ✗ Not Met — The patient has an ECOG performance status of 0 - Fully active.- The participant is able to perform a CPET test (cardiopulmonary exercise testing): ✗ Not Met — This is not mentioned in the patient profile.- Body mass index ≥ 18.5 kg/m²: ✗ Not Met — BMI is not mentioned in the patient profile.- Pregnant or breastfeeding women: ✗ Not Met — The patient is not pregnant or breastfeeding.- Presence of adequate bone marrow and organ function: ✗ Not Met — This is not mentioned in the patient profile.- HbA1c \<10%: ✗ Not Met — This is not mentioned in the patient profile.
+
+  Exclusion Criteria Check:- had a treatment with any of the following:- any other chemotherapy, immunotherapy or anticancer agents within 5 years of the first dose of study treatment: ✗ Not Met — No history of chemotherapy or immunotherapy is mentioned.- injectable hypoglycemics: ✗ Not Met — No history of injectable hypoglycemics is mentioned.- prior systemic treatment for breast cancer or other malignancies within 5 years of treatment enrollment, except for adequately treated basal cell or squamous skin cancer or in situ cervical cancer. Other malignancies diagnosed more than 5 years before the diagnosis of breast cancer must have been radically treated without evidence of relapse at the moment of patient enrollment in the tri…: ✗ Not Met — No history of prior systemic treatment for breast cancer or other malignancies is mentioned.
+
+  Medication/Allergy Conflicts: None
+
+  Comorbidity Flags: None
+
+  Intervention Summary: LESLIE is a multicentric randomized controlled trial in patients with triple negative breast cancer receiving neoadjuvant chemo/immunotherapy (NAT). This trial investigates the hypothesis that adding a cyclic fasting-mimicking diet combined with exercise during the NAT improves the NAT's therapeutic…
+
+  Clinical Rationale: The patient meets the criteria for Stage II breast cancer but is ER positive, not TNBC. The trial specifically targets TNBC patients. Therefore, the patient does not meet the primary inclusion criterion.
+
+────────────────────────────────────────────────────────────────────────
+  Trial 2: NCT05969860 — At-Home Cancer Directed Therapy Versus in Clinic for the Treatment of Patients With Advanced Cancer
+  VERDICT : ✗  INELIGIBLE
+────────────────────────────────────────────────────────────────────────
+
+  Inclusion Criteria Check:- Female or male patients with histologically confirmed malignancy: ✗ Not Met — The patient is female, but the diagnosis is breast cancer, not any other malignancy.- Participant must be receiving a standard-of-care treatment regimen listed in this protocol that is being used in accordance with standard medical practice. Specifically, it must be either a) FDA-approved for the participant's disease indication, or b) recommended in nationally recognized professional guidelines (e.g. NCCN, ASCO, ASH, etc.) as standard of care for the disease indication. Off-label use is permitted only if supported by such guidelines: ✗ Not Met — The patient's current treatment is not specified, but the trial is for patients receiving standard-of-care treatment.- Eligible disease cancer types:- Anal cancer: ✗ Not Met- Appendiceal carcinoma: ✗ Not Met- Basal cell carcinoma: ✗ Not Met- Bladder cancer: ✗ Not Met- Biliary cancer: ✗ Not Met- Breast cancer: ✗ Not Met- Central Nervous System malignancy including glioblastoma: ✗ Not Met- Cervical cancer: ✗ Not Met- Cholangiocarcinoma: ✗ Not Met- Colorectal carcinoma: ✗ Not Met- Endometrial cancer: ✗ Not Met- Fallopian tube cancer: ✗ Not Met- Gastroesophageal cancer: ✗ Not Met- Germ cell carcinoma: ✗ Not Met- Head and Neck cancer: ✗ Not Met- Hepatocellular Carcinoma: ✗ Not Met- Liver: ✗ Not Met- Lung: ✗ Not Met- Lymphoma: ✗ Not Met- Melanoma: ✗ Not Met- Merkel Cell: ✗ Not Met- Multiple Myeloma: ✗ Not Met- Myelodyspl…: ✗ Not Met
+
+  Exclusion Criteria Check:- Individuals who do not have access to a smart phone with Bluetooth capability (required for Fitbit and for responding to intervention text messages) or at least a shared cell phone with someone in the same household (i.e., some couples may share a phone): ✗ Not Met — No information on smartphone access.- Type 1 or type 2 diabetes who require exogenous insulin (due to the potential need to adjust insulin dosing with TRE) or with hemoglobin A1c \>10%: ✗ Not Met — No information on diabetes or HbA1c.- Research MRI contraindications (e.g., pacemaker, magnetic implants, pregnancy): ✗ Not Met — No information on MRI contraindications.- Uncontrolled thyroid disorder: ✗ Not Met — No information on thyroid status.- Self-reported eating disorder history: ✗ Not Met — No information on eating disorder history.- Body mass index \<18.5 kg/m2 or clinical signs of cachexia (discretion of treating oncologist): ✗ Not Met — No information on BMI or cachexia.- ≥5% body weight loss within last 6 months: ✗ Not Met — No information on weight loss.- Those who are currently working night/rotating shifts, eating within ≤10-hour window or consistently eating less than 3 meals/day in the past 3 months: ✗ Not Met — No information on eating habits.- patients who meet the criteria for medical clearance prior to exercise using the Physical Activity Readiness Questionnaire+ and are not cleared by their treating oncologist or family physician to perform maximal exercise testing: ✗ Not Met — No information on exercise clearance.
+
+  Medication/Allergy Conflicts: None
+
+  Comorbidity Flags: None
+
+  Intervention Summary: This clinical trial studies the effect of cancer directed therapy given at-home versus in the clinic for patients with cancer that may have spread from where it first started to nearby tissue, lymph nodes, or distant parts of the body (advanced). Currently most drug-related cancer care is conducted …
+
+  Clinical Rationale: The patient has Stage II breast cancer, which is generally considered early-stage, not advanced cancer as specified in the trial. The trial is designed for patients with advanced cancer.
+
+────────────────────────────────────────────────────────────────────────
+  Trial 3: NCT05432856 — Impact of Metabolic Health Patterns And Breast Cancer Over Time in Women
+  VERDICT : ✗  INELIGIBLE
+────────────────────────────────────────────────────────────────────────
+
+  Inclusion Criteria Check:- Female biological sex at birth: ✗ Not Met — The patient is female, but the diagnosis is breast cancer, not a condition diagnosed at birth.- \>18 years: ✗ Not Met — The patient is 48 years old.- Diagnosis of stage I, II, or III breast cancer: ✗ Not Met — The patient has Stage II breast cancer.- starting neoadjuvant or adjuvant intravenous chemotherapy: ✗ Not Met — No history of chemotherapy is mentioned.- ECOG \<3;- Oncologist approval to participate;- English speaking (all study materials and study staff will be in English): ✗ Not Met — No information on language ability.- Willing and able to adhere to study intervention: ✗ Not Met — No information on adherence willingness.
+
+  Exclusion Criteria Check:- Individuals who do not have access to a smart phone with Bluetooth capability (required for Fitbit and for responding to intervention text messages) or at least a shared cell phone with someone in the same household (i.e., some couples may share a phone): ✗ Not Met — No information on smartphone access.- Type 1 or type 2 diabetes who require exogenous insulin (due to the potential need to adjust insulin dosing with TRE) or with hemoglobin A1c \>10%: ✗ Not Met — No information on diabetes or HbA1c.- Research MRI contraindications (e.g., pacemaker, magnetic implants, pregnancy): ✗ Not Met — No information on MRI contraindications.- Uncontrolled thyroid disorder: ✗ Not Met — No information on thyroid status.- Self-reported eating disorder history: ✗ Not Met — No information on eating disorder history.- Body mass index \<18.5 kg/m2 or clinical signs of cachexia (discretion of treating oncologist): ✗ Not Met — No information on BMI or cachexia.- ≥5% body weight loss within last 6 months: ✗ Not Met — No information on weight loss.- Those who are currently working night/rotating shifts, eating within ≤10-hour window or consistently eating less than 3 meals/day in the past 3 months: ✗ Not Met — No information on eating habits.- patients who meet the criteria for medical clearance prior to exercise using the Physical Activity Readiness Questionnaire+ and are not cleared by their treating oncologist or family physician to perform maximal exercise testing: ✗ Not Met — No information on exercise clearance.
+
+  Medication/Allergy Conflicts: None
+
+  Comorbidity Flags: None
+
+  Intervention Summary: Time restricted eating, nutrition education, and sedentary time reduction strategies
+
+  Clinical Rationale: The patient has Stage II breast cancer and is not undergoing neoadjuvant or adjuvant chemotherapy. The trial requires patients starting these treatments. The patient does not meet the primary inclusion criterion.
+
+────────────────────────────────────────────────────────────────────────
+  Trial 4: NCT07259304 — Social Health, Activity Behaviors, and Quality of Life Among Young Adult Cancer Survivors
+  VERDICT : ✗  INELIGIBLE
+────────────────────────────────────────────────────────────────────────
+
+  Inclusion Criteria Check:- Diagnosed and/or treated with cancer between ages 18-39 at USC hospitals: ✗ Not Met — The patient is 48 years old.- Cancer types prototypical for adolescents and young adults (AYAs) and cancer stages I-III; select patients with stage IV disease may be eligible, with approval by the principal investigator (PI) and in consultation with the treating clinician: ✗ Not Met — The patient has Stage II breast cancer, not a prototypical AYA cancer.- Must be within three months of a de novo cancer diagnosis at recruitment and on/indicated for curative therapy (any modality). Patients may continue on adjuvant therapy throughout duration of the study: ✗ Not Met — No information on diagnosis timing or treatment status.- Patients must have anticipated survival of \>1-year at time of diagnosis: ✗ Not Met — No information on survival expectation.
+
+  Exclusion Criteria Check:- Diagnosis of blood malignancies such as leukemias (these cancers have divergent treatment patterns of longer duration than other cancers and are more commonly pediatric cancers). Some early stage lymphomas with favorable prognoses may be eligible, with approval by the PI and in consultation with the treating clinician: ✗ Not Met — The patient has breast cancer, not a blood malignancy.- Primary language other than English or Spanish: ✗ Not Met — No information on language.- Inability to complete a survey and/or wear an accelerometer either per the patient or in consultation with the clinician's judgment: ✗ Not Met — No information on survey/accelerometer ability.
+
+  Medication/Allergy Conflicts: None
+
+  Comorbidity Flags: None
+
+  Intervention Summary: Medical Device Usage and Evaluation; Quality-of-Life Assessment; Survey Administration
+
+  Clinical Rationale: The patient is 48 years old, outside the age range (18-39) specified for this trial. The trial focuses on young adult cancer survivors.
+
+────────────────────────────────────────────────────────────────────────
+  Trial 5: NCT06480513 — Cancer Of the BReast Asanas Study (COBRA)
+  VERDICT : ✗  INELIGIBLE
+────────────────────────────────────────────────────────────────────────
+
+  Inclusion Criteria Check:- Be diagnosed with oestrogen-receptor positive stage I-III breast cancer: ✗ Not Met — The patient has Stage II breast cancer, not ER positive stage I-III.- Use of aromatase inhibitors (\>4 months and will continue using it for at least six months): ✗ Not Met — No information on current treatment or medication use.- Have finished primary treatment (chemotherapy, radiotherapy, surgery) for at least six weeks: ✗ Not Met — No information on treatment completion.- Experience musculoskeletal complaints (\>3 months, which are at least mild in severity (i.e., score of ≥ 3 for worst pain item of a modified version of the Brief Pain Inventory \[BPI\](16, 42))., which started or exacerbated after initiation of endocrine treatment: ✗ Not Met — No information on musculoskeletal complaints or timing relative to endocrine treatment.- Be stabilized on menopausal symptom medication or antidepressants for at least three months and three weeks, respectively(19), if applicable, and- Be able to read, speak and understand Dutch or English: ✗ Not Met — No information on language ability.
+
+  Exclusion Criteria Check:- Too physically active (i.e., \>150 minutes/week of self-reported moderate-to-vigorous or leisure and sports activities): ✗ Not Met — No information on physical activity level.- Following (during the last 6 months), or planned to follow yoga classes on a structural base: ✗ Not Met — No information on yoga participation.- Following, or planned to follow, a structured psychological intervention during the intervention period, i.e., cognitive behavioral therapy, or unstable on psychotropic medication: ✗ Not Met — No information on psychological intervention or medication stability.- Participated in the intervention group of an exercise study during breast cancer treatment: ✗ Not Met — No information on prior exercise studies.- Any circumstances that would impede ability to give informed consent or adherence to study requirements as determined by the study team: ✗ Not Met — No information on consent or adherence.- More than 2 weeks not able to attend training sessions during the intervention period: ✗ Not Met — No information on attendance.
+
+  Medication/Allergy Conflicts: None
+
+  Comorbidity Flags: None
+
+  Intervention Summary: live yoga; live remote yoga
+
+  Clinical Rationale: The patient has Stage II breast cancer, not ER positive stage I-III. The trial requires ER positive stage I-III breast cancer. The patient does not meet the primary inclusion criterion.
+
+────────────────────────────────────────────────────────────────────────
