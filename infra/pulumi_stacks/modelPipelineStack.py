@@ -29,8 +29,9 @@ class ModelPipelineStack:
             bucket=self.function_bucket.name,
             source=pulumi.FileArchive("../../models/alert_function")
         )
+        self._create_firestore()
         self.pub_sub_service         = self._create_pub_sub_for_patient_request()
-        # self.eval_notification_topic = self._create_eval_notification_topic()
+        self.eval_notification_topic = self._create_eval_notification_topic()
         self.rag_service_function    = self._deploy_cloud_function() 
         # self.alert_function          = self._deploy_alert_function()
         # self._setup_gcs_notification()
@@ -39,6 +40,18 @@ class ModelPipelineStack:
         self._grant_permissions()
         self._export_outputs()
 
+
+    def _create_firestore(self) -> gcp.firestore.Database:
+        return gcp.firestore.Database(
+            f"dev-clinical-trials-suggestions-db",
+            project=self.project_id,
+            name="clinical-trials-suggestions-db",
+            location_id=self.region,
+            type="FIRESTORE_NATIVE",
+            concurrency_mode="OPTIMISTIC",
+            opts=self. opts,
+        )
+    
     def _create_service_account(self) -> gcp.serviceaccount.Account:
         return gcp.serviceaccount.Account(
             f"{self.name}-model-service-account",

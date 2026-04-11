@@ -1,0 +1,202 @@
+{
+  "conditions": [
+    {
+      "body_site": null,
+      "display_name": "Diabetes mellitus type 2 (disorder)",
+      "abatement_date": null,
+      "code": "44054006",
+      "status": "active",
+      "onset_date": "2010-01-15",
+      "severity": null
+    },
+    {
+      "body_site": null,
+      "display_name": "Body mass index 30+ - obesity (finding)",
+      "abatement_date": null,
+      "code": "162864005",
+      "status": "active",
+      "onset_date": "2006-10-02",
+      "severity": null
+    },
+    {
+      "body_site": null,
+      "display_name": "Chronic sinusitis (disorder)",
+      "abatement_date": null,
+      "code": "40055000",
+      "status": "active",
+      "onset_date": "1988-12-03",
+      "severity": null
+    },
+    {
+      "body_site": null,
+      "display_name": "Anemia (disorder)",
+      "abatement_date": null,
+      "code": "271737000",
+      "status": "active",
+      "onset_date": "1985-12-16",
+      "severity": null
+    },
+    {
+      "body_site": null,
+      "display_name": "Chronic pain (finding)",
+      "abatement_date": null,
+      "code": "82423001",
+      "status": "active",
+      "onset_date": "2014-02-05",
+      "severity": null
+    },
+    {
+      "body_site": null,
+      "display_name": "Not in labor force (finding)",
+      "abatement_date": null,
+      "code": "741062008",
+      "status": "active",
+      "onset_date": "2024-12-02",
+      "severity": null
+    }
+  ],
+  "procedures": [],
+  "demographics": {
+    "age": 65,
+    "patient_id": "724c5db9-d82d-4c2d-af21-18e196a8769a",
+    "date_of_birth": "1960-09-12",
+    "marital_status": "Married",
+    "country": "US",
+    "race": "White",
+    "gender": "female",
+    "state": "MA",
+    "city": "Millbury",
+    "firebase_uid": "kFzxXVou83XASnWp3A2qrapILsH2"
+  },
+  "allergies": [
+    {
+      "reaction": [
+        "Wheal (finding)",
+        "Eruption of skin (disorder)"
+      ],
+      "type": "allergy",
+      "criticality": "low",
+      "onset_date": null,
+      "substance": "Shellfish (substance)"
+    }
+  ],
+  "observations": [
+    {
+      "value": 7.8,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "%",
+      "value_string": null,
+      "code": "4548-4",
+      "display_name": "Hemoglobin A1c/Hemoglobin.total in Blood",
+      "category": "laboratory",
+      "reference_range_low": null
+    },
+    {
+      "value": 162.5,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "cm",
+      "value_string": null,
+      "code": "8302-2",
+      "display_name": "Body Height",
+      "category": "vital-signs",
+      "reference_range_low": null
+    },
+    {
+      "value": 80.6,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "kg",
+      "value_string": null,
+      "code": "29463-7",
+      "display_name": "Body Weight",
+      "category": "vital-signs",
+      "reference_range_low": null
+    },
+    {
+      "value": 30.52,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "kg/m2",
+      "value_string": null,
+      "code": "39156-5",
+      "display_name": "Body mass index (BMI) [Ratio]",
+      "category": "vital-signs",
+      "reference_range_low": null
+    },
+    {
+      "value": 84.0,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "/min",
+      "value_string": null,
+      "code": "8867-4",
+      "display_name": "Heart rate",
+      "category": "vital-signs",
+      "reference_range_low": null
+    },
+    {
+      "value": 12.0,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "/min",
+      "value_string": null,
+      "code": "9279-1",
+      "display_name": "Respiratory rate",
+      "category": "vital-signs",
+      "reference_range_low": null
+    },
+    {
+      "value": 140.0,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": "mg/dL",
+      "value_string": null,
+      "code": "2339-0",
+      "display_name": "Glucose [Mass/volume] in Blood",
+      "category": "laboratory",
+      "reference_range_low": null
+    },
+    {
+      "value": null,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": null,
+      "value_string": "Never smoked tobacco (finding)",
+      "code": "72166-2",
+      "display_name": "Tobacco smoking status",
+      "category": "social-history",
+      "reference_range_low": null
+    },
+    {
+      "value": null,
+      "date": "2025-12-08",
+      "reference_range_high": null,
+      "unit": null,
+      "value_string": "Sedentary lifestyle, less than 60 minutes per week of moderate physical activity",
+      "code": "68130003",
+      "display_name": "Physical activity (observable entity)",
+      "category": "social-history",
+      "reference_range_low": null
+    }
+  ],
+  "medications": [
+    {
+      "end_date": null,
+      "route": "oral",
+      "reason": "Type 2 Diabetes",
+      "code": "860975",
+      "display_name": "Metformin 500 MG Oral Tablet",
+      "dosage": "500mg twice daily",
+      "status": "active",
+      "start_date": "2010-03-01"
+    }
+  ],
+  "lifestyle": {
+    "smoking_status": "Never smoked tobacco (finding)",
+    "alcohol_use": null,
+    "exercise_frequency": "Sedentary, less than 60 minutes per week of moderate physical activity",
+    "occupation": "Retired"
+  }
+}
