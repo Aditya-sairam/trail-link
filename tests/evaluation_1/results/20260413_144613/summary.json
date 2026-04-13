@@ -1,0 +1,166 @@
+{
+  "run_id": "20260413_144613",
+  "generated_at": "2026-04-13T19:58:20.339297",
+  "total": 45,
+  "passed": 11,
+  "blocked": 0,
+  "flagged": 5,
+  "failed": 0,
+  "skipped": 29,
+  "duration_seconds": 1125.23,
+  "by_condition": {
+    "breast_cancer": {
+      "total": 6,
+      "eligible": 3,
+      "borderline": 1,
+      "ineligible": 0,
+      "blocked": 2,
+      "failed": 0
+    },
+    "diabetes": {
+      "total": 10,
+      "eligible": 9,
+      "borderline": 0,
+      "ineligible": 0,
+      "blocked": 1,
+      "failed": 0
+    }
+  },
+  "by_verdict": {
+    "ELIGIBLE": 12,
+    "BORDERLINE": 1,
+    "INELIGIBLE": 0,
+    "BLOCKED": 3,
+    "FAILED": 0
+  },
+  "patients": [
+    {
+      "patient_id": "9ec69569-f7e3-4052-a880-4bbb972c9d84",
+      "condition": "breast_cancer",
+      "overall_verdict": "BORDERLINE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 51.78
+    },
+    {
+      "patient_id": "ad758292-e9ff-41e3-a4ff-bb491b9ea9f9",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 57.61
+    },
+    {
+      "patient_id": "ae4ffadf-243a-4c47-8eef-6198deb04f5f",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 47.69
+    },
+    {
+      "patient_id": "b17d2697-2e2c-4fba-8e32-84489eb012fe",
+      "condition": "diabetes",
+      "overall_verdict": "BLOCKED",
+      "guardrail_status": "flagged",
+      "n_retrieved": 5,
+      "elapsed_s": 56.41
+    },
+    {
+      "patient_id": "b82e052e-25ca-4f18-95aa-16cb455ad73f",
+      "condition": "breast_cancer",
+      "overall_verdict": "BLOCKED",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 262.28
+    },
+    {
+      "patient_id": "b889f1a4-10b7-495e-a10e-1a79a597b3c1",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 60.29
+    },
+    {
+      "patient_id": "c98be91c-ad73-4717-a9f0-4dc7bfaad19d",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 57.7
+    },
+    {
+      "patient_id": "ceec0dea-34f7-4ee4-8c7d-d302e8756672",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "flagged",
+      "n_retrieved": 5,
+      "elapsed_s": 50.57
+    },
+    {
+      "patient_id": "d1693b81-62c4-4149-af0e-ee6d9a99d3a1",
+      "condition": "breast_cancer",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 46.96
+    },
+    {
+      "patient_id": "d2b3a72a-a362-4e48-acd8-2ba911990d53",
+      "condition": "breast_cancer",
+      "overall_verdict": "BLOCKED",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 137.23
+    },
+    {
+      "patient_id": "d7119618-6f61-4b2d-89b7-594264412aca",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 55.46
+    },
+    {
+      "patient_id": "d8e576a8-179b-40e0-8cf5-ee723c7bd824",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "flagged",
+      "n_retrieved": 5,
+      "elapsed_s": 37.03
+    },
+    {
+      "patient_id": "e0c351d9-8be1-4f4b-97b4-7c81639a2fd0",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 45.38
+    },
+    {
+      "patient_id": "eb019545-8176-4374-8708-f7104e67274b",
+      "condition": "diabetes",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "flagged",
+      "n_retrieved": 5,
+      "elapsed_s": 49.8
+    },
+    {
+      "patient_id": "eeaaf204-947f-45f7-823c-ce5a87cfb59c",
+      "condition": "breast_cancer",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "flagged",
+      "n_retrieved": 5,
+      "elapsed_s": 61.11
+    },
+    {
+      "patient_id": "fb9c70bb-cefa-448f-84c3-17beb8ece867",
+      "condition": "breast_cancer",
+      "overall_verdict": "ELIGIBLE",
+      "guardrail_status": "passed",
+      "n_retrieved": 5,
+      "elapsed_s": 47.88
+    }
+  ]
+}
