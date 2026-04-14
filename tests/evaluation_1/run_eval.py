@@ -49,19 +49,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
-
-# ── GCP env vars (must be set before importing rag_service) ──────────────────
-os.environ.setdefault("GCP_PROJECT_ID",           "triallink-eval-001")
-os.environ.setdefault("MODEL_PROJECT_ID",          "mlops-triallink")
-os.environ.setdefault("MODEL_PROJECT_NUMBER",      "153563619775")
-os.environ.setdefault("GCP_REGION",                "us-central1")
-os.environ.setdefault("MEDGEMMA_ENDPOINT_ID",      "mg-endpoint-a55baaeb-7cc5-4ff4-b3c9-97e6c20bfaad")
-os.environ.setdefault("FIRESTORE_DATABASE",        "clinical-trials-db")
-os.environ.setdefault("PATIENT_DB",                "patient-db-dev")
-os.environ.setdefault("VECTOR_SEARCH_ENDPOINT_ID",
-    "projects/408416535077/locations/us-central1/indexEndpoints/4231811348100546560")
-os.environ.setdefault("DEPLOYED_INDEX_ID",         "clinical_trials_dev")
+load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 REPO_ROOT    = Path(__file__).parent.parent.parent

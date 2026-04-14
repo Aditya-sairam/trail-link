@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GCP_PROJECT_ID  = os.getenv("GCP_PROJECT_ID",  "triallink-eval-001")
-MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "mlops-triallink")
+MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "")
 GCP_REGION      = os.getenv("GCP_REGION",      "us-central1")
 
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
@@ -94,10 +94,7 @@ FIRESTORE_DB            = os.getenv("FIRESTORE_DATABASE",   "clinical-trials-db"
 PATIENT_DB              = os.getenv("PATIENT_DB",           "patient-db-dev")
 TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 
-MEDGEMMA_ENDPOINT_ID = os.getenv(
-    "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-1284414a-76e1-4adf-9478-d8ca475dedd9",
-)
+MEDGEMMA_ENDPOINT_ID = os.getenv("MEDGEMMA_ENDPOINT_ID", "")
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "15"))
@@ -1251,14 +1248,17 @@ def medgemma_judge(
 
     try:
         region         = os.getenv("GCP_REGION",         "us-central1")
-        project_number = os.getenv("MODEL_PROJECT_NUMBER", "153563619775")
+        project_number = os.getenv("MODEL_PROJECT_NUMBER", "")
         endpoint_id    = MEDGEMMA_ENDPOINT_ID
 
-        dedicated_domain = f"{endpoint_id}.{region}-{project_number}.prediction.vertexai.goog"
+        
+        dedicated_host = os.getenv("MEDGEMMA_DEDICATED_HOST", "")
+
         url = (
-            f"https://{dedicated_domain}/v1/projects/{project_number}"
+            f"https://{dedicated_host}/v1/projects/{project_number}"
             f"/locations/{region}/endpoints/{endpoint_id}:predict"
         )
+
 
         credentials, _ = google.auth.default(
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -1286,7 +1286,12 @@ def medgemma_judge(
         }
 
         response = requests.post(url, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"MedGemma HTTP error status: {e.response.status_code}")
+            logger.error(f"MedGemma HTTP error body: {e.response.text[:500]}")
+            raise
 
         result = response.json()["predictions"][0]
 
