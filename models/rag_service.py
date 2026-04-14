@@ -10,12 +10,17 @@ Pipeline:
      - PII redaction
      - structural validation
      - LLM semantic input judge
-  1. Embed patient summary       (Vertex AI text-embedding-005)
-  2. Query Vertex AI Vector Search
-  3. Fetch matched trials from Firestore
-  4. Rerank using Vertex AI Ranking API
-  5. Generate recommendation using MedGemma
-  6. Output guardrails
+  1A. LLM clinical context enrichment       (Gemini — semantic condition detection)
+  1B. Rule-based condition detection         (fallback)
+  1C. Enriched retrieval query builder
+  1. Embed enriched query                    (Vertex AI text-embedding-005)
+  2. Query Vertex AI Vector Search           (condition-scoped)
+  3. Fetch matched trials from Firestore     (condition-aware)
+  3.5 Rerank using Vertex AI Ranking API
+  3.6 Condition-subtype filter
+  4. Generate recommendation using Gemini
+  4B. MedGemma as second-opinion judge
+  5. Output guardrails
      - policy checks
      - grounding checks
      - LLM output judge
@@ -44,6 +49,8 @@ import json
 import logging
 import os
 import re
+import requests
+import google.auth
 from datetime import datetime
 from typing import Any
 
@@ -53,6 +60,7 @@ except ImportError:
     functions_framework = None
 
 import vertexai
+from google.auth.transport.requests import Request
 from google.cloud import aiplatform
 from google.cloud import discoveryengine_v1alpha as discoveryengine
 from google.cloud import firestore
@@ -70,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "triallink-eval-001")
-MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "mlops-triallink")
+MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "triallinkai")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
@@ -85,7 +93,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-793fe0e6-6ab7-4859-bbdb-975818d49851",
+    "mg-endpoint-3c203e7a-bcd0-4906-8a7c-be1ce557f067",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
@@ -231,9 +239,6 @@ def get_guardrail_model() -> GenerativeModel:
 
 
 def extract_json_block(text: str) -> dict[str, Any]:
-    """
-    Safely extract JSON from model output.
-    """
     if text is None:
         raise ValueError("Model response text is None")
 
@@ -246,13 +251,11 @@ def extract_json_block(text: str) -> dict[str, Any]:
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
 
-    # Try direct JSON parse first
     try:
         return json.loads(text)
     except Exception:
         pass
 
-    # Fallback: find first JSON object in text
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
@@ -531,8 +534,6 @@ else:
 
 def embed_text(text: str, task_type: str = "RETRIEVAL_QUERY") -> list[float]:
     try:
-        # Re-init with RAG project — evaluate_rag.py may have overridden vertexai
-        # with the eval project (triallink-eval-001) for Gemini calls.
         vertexai.init(
             project=GCP_PROJECT_ID,
             location=os.getenv("GCP_REGION", "us-central1")
@@ -565,6 +566,194 @@ def trial_to_text(trial: dict) -> str:
         f"Eligibility: {_get('eligibility_criteria')}. "
         f"Summary: {_get('brief_summary')}."
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 1A — LLM CLINICAL CONTEXT ENRICHER (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def enrich_patient_context(patient_summary: str) -> dict:
+    """
+    Use Gemini to extract structured clinical context from patient summary.
+    Understands semantic relationships e.g.:
+      prediabetes → T2DM prevention trials (not T1DM, not active T2DM treatment)
+      metabolic syndrome → insulin resistance trials
+      ER+ breast cancer → hormone receptor trials (not TNBC)
+    """
+    prompt = f"""
+You are a clinical informatics specialist. Analyze this patient summary and
+extract structured information for clinical trial matching.
+
+PATIENT SUMMARY:
+{patient_summary}
+
+Return strict JSON only:
+{{
+  "condition_categories": ["diabetes" and/or "breast_cancer" — only include supported conditions present],
+  "is_dual_condition": true or false,
+  "trial_search_terms": [
+    "10-15 specific medical terms to search for relevant trials",
+    "include exact diagnosis AND semantically related terms"
+  ],
+  "exclude_trial_types": [
+    "trial types to EXCLUDE for this specific patient"
+  ],
+  "metabolic_profile": {{
+    "hba1c": "value% or null",
+    "bmi": "value or null",
+    "age": "value or null",
+    "stage": "cancer stage or null"
+  }},
+  "patient_eligibility_context": "2-3 sentence clinical summary of what makes this patient a good candidate"
+}}
+
+Rules:
+- condition_categories MUST only contain 'diabetes' or 'breast_cancer'
+- For prediabetes: search T2DM PREVENTION trials, EXCLUDE T1DM and active T2DM treatment trials
+- For ER+ breast cancer: specify hormone receptor positive terms, EXCLUDE TNBC trials
+- If condition is COPD, heart failure, Alzheimer's etc: condition_categories = []
+
+Return JSON only. No explanation outside JSON.
+"""
+    model = get_guardrail_model()
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=GenerationConfig(
+                temperature=0.0,
+                max_output_tokens=1024,
+                response_mime_type="application/json",
+            ),
+        )
+        result = extract_json_block(response.text)
+        logger.info(
+            f"Clinical context: conditions={result.get('condition_categories')}, "
+            f"dual={result.get('is_dual_condition')}, "
+            f"terms={result.get('trial_search_terms', [])[:3]}"
+        )
+        return result
+    except Exception as e:
+        logger.warning(f"Clinical context enrichment failed: {e}")
+        return {}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 1B — RULE-BASED CONDITION DETECTOR (fallback)
+# ══════════════════════════════════════════════════════════════════════════════
+
+CONDITION_SIGNALS = {
+    "breast_cancer": {
+        "strong": [
+            "malignant neoplasm of breast", "breast cancer", "breast carcinoma",
+            "ductal carcinoma", "her2", "estrogen receptor positive",
+            "triple negative", "dcis", "lobular carcinoma", "breast neoplasm",
+        ],
+        "weak": ["breast", "mammogram", "lumpectomy", "mastectomy"],
+    },
+    "diabetes": {
+        "strong": [
+            "diabetes mellitus type 2", "type 2 diabetes", "prediabetes",
+            "prediabetic", "hba1c", "insulin resistance", "metabolic syndrome",
+            "hyperglycemia", "t2dm", "diabetes mellitus",
+        ],
+        "weak": ["glucose", "insulin", "glycemic", "a1c", "obesity"],
+    },
+}
+
+
+def detect_patient_conditions(patient_summary: str) -> list[str]:
+    """Rule-based fallback condition detection using strong/weak signals."""
+    summary_lower = patient_summary.lower()
+    detected = []
+    for condition, signals in CONDITION_SIGNALS.items():
+        strong_match = any(s in summary_lower for s in signals["strong"])
+        weak_count = sum(1 for s in signals["weak"] if s in summary_lower)
+        if strong_match or weak_count >= 2:
+            detected.append(condition)
+            logger.info(f"Rule-based detected: {condition} (strong={strong_match}, weak={weak_count})")
+    if not detected:
+        logger.warning("No condition detected — falling back to all conditions")
+        detected = CONDITIONS
+    return detected
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 1C — ENRICHED RETRIEVAL QUERY BUILDER (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_retrieval_query(
+    patient_summary: str,
+    conditions: list[str],
+    clinical_context: dict | None = None,
+) -> str:
+    """
+    Build a clinically enriched retrieval query.
+    Uses LLM-extracted search terms when available,
+    falls back to rule-based extraction.
+    """
+    query_parts = []
+
+    if clinical_context and clinical_context.get("trial_search_terms"):
+        search_terms = clinical_context["trial_search_terms"]
+        query_parts.extend(search_terms[:12])
+
+        metabolic = clinical_context.get("metabolic_profile", {})
+        if metabolic.get("hba1c"):
+            query_parts.append(f"HbA1c {metabolic['hba1c']}")
+        if metabolic.get("bmi"):
+            query_parts.append(f"BMI {metabolic['bmi']}")
+        if metabolic.get("stage"):
+            query_parts.append(f"cancer stage {metabolic['stage']}")
+
+        context_text = clinical_context.get("patient_eligibility_context", "")
+        if context_text:
+            query_parts.append(context_text)
+
+        logger.info(f"Using LLM-enriched query with {len(search_terms)} terms")
+
+    else:
+        logger.info("Using rule-based query enrichment (LLM context unavailable)")
+        summary_lower = patient_summary.lower()
+
+        condition_terms = {
+            "breast_cancer": "breast cancer clinical trial oncology",
+            "diabetes":      "diabetes clinical trial glycemic control glucose",
+        }
+        for cond in conditions:
+            query_parts.append(condition_terms.get(cond, cond))
+
+        hba1c_match = re.search(r"hba1c[^\d]*(\d+\.?\d*)\s*%", summary_lower)
+        if hba1c_match:
+            query_parts.append(f"HbA1c {hba1c_match.group(1)}%")
+
+        bmi_match = re.search(r"bmi[^\d]*(\d+\.?\d*)", summary_lower)
+        if bmi_match:
+            query_parts.append(f"BMI {bmi_match.group(1)}")
+
+        age_match = re.search(r"(\d+)-year-old", summary_lower)
+        if age_match:
+            query_parts.append(f"adult age {age_match.group(1)}")
+
+        comorbidity_map = {
+            "hypertension":       "hypertension blood pressure",
+            "obesity":            "obesity overweight BMI",
+            "prediabetes":        "prediabetes prevention T2DM risk lifestyle intervention",
+            "metabolic syndrome": "metabolic syndrome insulin resistance",
+            "breast cancer":      "breast cancer oncology",
+            "her2":               "HER2 breast cancer",
+            "estrogen receptor":  "hormone receptor positive breast cancer ER+",
+            "triple negative":    "triple negative breast cancer TNBC",
+        }
+        for keyword, term in comorbidity_map.items():
+            if keyword in summary_lower:
+                query_parts.append(term)
+
+        if "female" in summary_lower:
+            query_parts.append("female women")
+
+    enriched_query = " ".join(query_parts)
+    logger.info(f"Enriched retrieval query ({len(enriched_query)} chars): {enriched_query[:300]}")
+    return enriched_query
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -610,26 +799,50 @@ def query_vector_search(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 3 — FETCH MATCHED TRIALS FROM FIRESTORE
+# STEP 3 — FETCH MATCHED TRIALS FROM FIRESTORE (condition-aware — NEW)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def fetch_trials_from_firestore(nct_ids: list[str]) -> list[dict]:
+def fetch_trials_from_firestore(
+    nct_ids: list[str],
+    target_conditions: list[str] | None = None,
+) -> list[dict]:
+    """
+    Fetch trial documents from Firestore.
+    - Only searches collections relevant to detected patient conditions
+    - Validates each document's 'disease' field matches target conditions
+    """
     db = firestore.Client(project=GCP_PROJECT_ID, database=FIRESTORE_DB)
     trials = []
     seen_ids = set()
 
-    for condition in CONDITIONS:
+    collections_to_search = target_conditions if target_conditions else CONDITIONS
+    logger.info(f"Fetching from collections: {collections_to_search}")
+
+    for condition in collections_to_search:
         collection_name = f"clinical_trials_{condition}"
         for nct_id in nct_ids:
             if nct_id in seen_ids:
                 continue
             try:
                 doc = db.collection(collection_name).document(nct_id).get()
-                if doc.exists:
-                    trial = doc.to_dict()
-                    trial["_doc_id"] = doc.id
-                    trials.append(trial)
-                    seen_ids.add(nct_id)
+                if not doc.exists:
+                    continue
+
+                trial = doc.to_dict()
+                trial_disease = str(trial.get("disease", "")).lower().strip()
+
+                # Hard filter using engineered 'disease' field
+                if trial_disease and trial_disease not in collections_to_search:
+                    logger.info(
+                        f"disease field filter: skipping {nct_id} "
+                        f"(disease='{trial_disease}', target={collections_to_search})"
+                    )
+                    continue
+
+                trial["_doc_id"] = doc.id
+                trials.append(trial)
+                seen_ids.add(nct_id)
+
             except Exception as e:
                 logger.warning(f"Could not fetch {nct_id} from {collection_name}: {e}")
 
@@ -695,9 +908,6 @@ def rerank_trials(
 # STEP 3.6 — CONDITION-SUBTYPE FILTER
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Mapping: if patient summary contains any of the "patient_has" terms,
-# remove any trial whose conditions+title ONLY mention the "exclude_if_only" terms
-# (i.e. the trial is for a different subtype and doesn't also cover the patient's type).
 _SUBTYPE_FILTER_RULES = [
     # ── Diabetes ────────────────────────────────────────────────────────────────
     {
@@ -712,7 +922,6 @@ _SUBTYPE_FILTER_RULES = [
         "must_not_contain_patient_type": ["type 2 diabetes", "t2d"],
     },
     # ── Breast cancer subtypes ──────────────────────────────────────────────────
-    # Drop HER2-positive-only trials for HER2-low / HER2-negative patients
     {
         "patient_has":     ["her2 low", "her2-low", "her2 negative", "her2-negative",
                             "her2 neg", "fish non-amplified"],
@@ -723,7 +932,6 @@ _SUBTYPE_FILTER_RULES = [
                                           "her2-negative", "her2 neg", "her-2-negative",
                                           "her-2 negative"],
     },
-    # Drop triple-negative (TNBC) trials for ER+ or PR+ patients
     {
         "patient_has":     ["estrogen receptor positive", "er positive", "er+",
                             "progesterone receptor positive", "pr positive", "pr+"],
@@ -733,6 +941,7 @@ _SUBTYPE_FILTER_RULES = [
                                           "er positive", "estrogen receptor"],
     },
 ]
+
 
 def filter_mismatched_subtypes(patient_summary: str, trials: list[dict]) -> list[dict]:
     """Remove trials clearly targeting a disease subtype different from the patient's."""
@@ -766,19 +975,16 @@ def filter_mismatched_subtypes(patient_summary: str, trials: list[dict]) -> list
 # STEP 4 — GENERATE RECOMMENDATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-import os
-import requests
-import google.auth
-from google.auth.transport.requests import Request
+_EC_LIMIT = 1500
+_IV_LIMIT = 300
+_SU_LIMIT = 300
+_CO_LIMIT = 150
 
-_EC_LIMIT = 1500   # chars per trial for eligibility_criteria
-_IV_LIMIT = 300    # chars per trial for interventions
-_SU_LIMIT = 300    # chars per trial for brief_summary
-_CO_LIMIT = 150    # chars per trial for conditions (can be huge lists)
 
 def _trim(val, limit: int) -> str:
     s = str(val) if val and str(val).strip() not in ("", "nan", "None") else "N/A"
     return s[:limit] + "…" if len(s) > limit else s
+
 
 def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) -> str:
     context = "\n\n".join([
@@ -883,14 +1089,12 @@ Clinical Rationale: [2 sentences: why this trial fits or does not fit this speci
 def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_analysis: str) -> str:
     """
     Use MedGemma as a second-opinion judge on Gemini 2.5 Flash's per-trial verdicts.
-    Returns one AGREE/DISAGREE line per trial.
     """
     trial_lines = "\n".join([
         f"Trial {i+1}: {t.get('nct_number','?')} — {t.get('study_title') or t.get('title','?')}"
         for i, t in enumerate(retrieved_trials)
     ])
 
-    # Keep Gemini analysis short — just the verdict lines — to stay within MedGemma context
     verdict_lines = []
     for line in gemini_analysis.splitlines():
         if re.search(r"VERDICT\s*:", line, re.IGNORECASE) or re.match(r"\*\*Trial\s+\d+", line.strip()):
@@ -920,12 +1124,8 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
     )
 
     try:
-        import google.auth
-        from google.auth.transport.requests import Request as AuthRequest
-        import requests as _req
-
         region = os.getenv("GCP_REGION", "us-central1")
-        project_number = os.getenv("MODEL_PROJECT_NUMBER", "153563619775")
+        project_number = os.getenv("MODEL_PROJECT_NUMBER", "428692943682")
         endpoint_id = MEDGEMMA_ENDPOINT_ID
 
         dedicated_domain = f"{endpoint_id}.{region}-{project_number}.prediction.vertexai.goog"
@@ -935,17 +1135,16 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
         )
 
         credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        credentials.refresh(AuthRequest())
+        credentials.refresh(Request())
 
         headers = {"Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json"}
         payload = {"instances": [{"prompt": prompt, "max_tokens": 512, "temperature": 0.1}]}
 
-        response = _req.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
         result = response.json()["predictions"][0]
 
         text = (result.get("generated_text") or result.get("output") or str(result)) if isinstance(result, dict) else str(result)
 
-        # Strip prompt echo
         for marker in ("<start_of_turn>model", "Output:"):
             if marker in text:
                 text = text.split(marker, 1)[1]
@@ -998,7 +1197,6 @@ def rag_pipeline(patient_summary: str) -> dict:
         )
 
     # Step 0C: LLM input guardrail
-        # Step 0C: LLM input guardrail
     if ENABLE_INPUT_LLM_GUARDRAIL:
         logger.info("Step 0C: Running LLM input guardrail...")
         try:
@@ -1029,9 +1227,37 @@ def rag_pipeline(patient_summary: str) -> dict:
             guardrail_meta["reason"] = str(e)
             guardrail_meta["flag_reasons"].append(f"input_llm_guardrail_error: {e}")
 
+    # Step 1A: LLM clinical context enrichment
+    logger.info("Step 1A: LLM clinical context enrichment...")
+    clinical_context = {}
+    detected_conditions = []
+
+    try:
+        clinical_context = enrich_patient_context(patient_summary)
+        llm_conditions = [
+            c for c in clinical_context.get("condition_categories", [])
+            if c in CONDITIONS
+        ]
+        if llm_conditions:
+            detected_conditions = llm_conditions
+            logger.info(f"LLM-detected conditions: {detected_conditions}")
+        else:
+            logger.info("LLM returned no supported conditions — using rule-based fallback")
+            detected_conditions = detect_patient_conditions(patient_summary)
+    except Exception as e:
+        logger.warning(f"LLM enrichment failed, using rule-based: {e}")
+        clinical_context = {}
+        detected_conditions = detect_patient_conditions(patient_summary)
+
+    logger.info(f"Final detected conditions: {detected_conditions}")
+
+    # Step 1C: Build enriched retrieval query
+    logger.info("Step 1C: Building enriched retrieval query...")
+    retrieval_query = build_retrieval_query(patient_summary, detected_conditions, clinical_context)
+
     # Step 1: Embed
-    logger.info("Step 1: Embedding patient summary...")
-    patient_embedding = embed_text(patient_summary, task_type="RETRIEVAL_QUERY")
+    logger.info("Step 1: Embedding enriched retrieval query...")
+    patient_embedding = embed_text(retrieval_query, task_type="RETRIEVAL_QUERY")
     logger.info(f"Embedding dimensions: {len(patient_embedding)}")
 
     # Step 2: Vector search
@@ -1047,9 +1273,9 @@ def rag_pipeline(patient_summary: str) -> dict:
             pii_hits=pii_hits,
         )
 
-    # Step 3: Fetch Firestore docs
+    # Step 3: Fetch Firestore docs (condition-aware)
     logger.info("Step 3: Fetching matched trials from Firestore...")
-    candidates = fetch_trials_from_firestore(candidate_nct_ids)
+    candidates = fetch_trials_from_firestore(candidate_nct_ids, target_conditions=detected_conditions)
     logger.info(f"Fetched {len(candidates)} trial documents")
 
     valid_retrieval, retrieval_reason = validate_retrieved_trials(candidates)
@@ -1063,7 +1289,6 @@ def rag_pipeline(patient_summary: str) -> dict:
         )
 
     # Step 3.6: Remove trials for the wrong disease subtype BEFORE reranking
-    # so the reranker selects top-K from a clean pool, not wasting slots on mismatched subtypes.
     logger.info("Step 3.6: Filtering mismatched subtypes from all candidates...")
     candidates = filter_mismatched_subtypes(patient_summary, candidates)
     logger.info(f"After subtype filter: {len(candidates)} candidates remain")
@@ -1093,7 +1318,7 @@ def rag_pipeline(patient_summary: str) -> dict:
     # Step 4: Generate recommendation
     logger.info("Step 4: Generating recommendation...")
     recommendation = generate_recommendation(patient_summary, reranked_trials)
-    raw_medgemma_output = recommendation  # preserve before any guardrail replaces it
+    raw_medgemma_output = recommendation
 
     # Step 5A: Policy checks
     logger.info("Step 5A: Running policy-based output guardrails...")
@@ -1127,7 +1352,6 @@ def rag_pipeline(patient_summary: str) -> dict:
         )
 
     # Step 5C: LLM output judge
-        # Step 5C: LLM output judge
     if ENABLE_OUTPUT_LLM_GUARDRAIL:
         logger.info("Step 5C: Running LLM output guardrail...")
         try:
