@@ -1,5 +1,5 @@
 config:
-  gcp:project: mlops-triallink
+  gcp:project: triallinkai
   gcp:region: us-central1
   deploy_model: true
   deploy_pipeline: false

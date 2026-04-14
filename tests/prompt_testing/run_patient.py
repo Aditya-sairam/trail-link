@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from models.rag_service import rag_pipeline_for_patient
 
 # Patient uploaded via frontend — swap this ID to test different patients
+<<<<<<< Updated upstream
 PATIENT_ID = "b889f1a4-10b7-495e-a10e-1a79a597b3c1"
 
 # ── Output setup ──────────────────────────────────────────────────────────────
@@ -43,6 +44,9 @@ def out(*args, **kwargs):
     print(*args, **kwargs)
     kwargs.pop("file", None)
     print(*args, **kwargs, file=_txt_file)
+=======
+PATIENT_ID ="ceec0dea-34f7-4ee4-8c7d-d302e8756672"
+>>>>>>> Stashed changes
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 W = 72

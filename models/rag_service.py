@@ -90,6 +90,7 @@ VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
 )
 DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID", "clinical_trials_dev")
 
+<<<<<<< Updated upstream
 FIRESTORE_DB            = os.getenv("FIRESTORE_DATABASE",   "clinical-trials-db")
 PATIENT_DB              = os.getenv("PATIENT_DB",           "patient-db-dev")
 TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
@@ -97,21 +98,39 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "")
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
     "mg-endpoint-1284414a-76e1-4adf-9478-d8ca475dedd9",
+=======
+FIRESTORE_DB = os.getenv("FIRESTORE_DATABASE", "clinical-trials-db")
+PATIENT_DB = os.getenv("PATIENT_DB", "patient-db-dev")
+TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-suggestions-db")
+
+MEDGEMMA_ENDPOINT_ID = os.getenv(
+    "MEDGEMMA_ENDPOINT_ID",
+    "mg-endpoint-5cf27b97-44c1-4130-9a77-40ce2c8cd79b",
+>>>>>>> Stashed changes
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "15"))
+<<<<<<< Updated upstream
 RERANK_TOP_K    = int(os.getenv("RERANK_TOP_K",    "5"))
 CONDITIONS      = ["diabetes", "breast_cancer"]
+=======
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "5"))
+CONDITIONS = ["diabetes", "breast_cancer"]
+>>>>>>> Stashed changes
 
 GUARDRAIL_MODEL             = os.getenv("GUARDRAIL_MODEL", "gemini-2.5-flash")
 ENABLE_INPUT_LLM_GUARDRAIL  = os.getenv("ENABLE_INPUT_LLM_GUARDRAIL",  "true").lower() == "true"
 ENABLE_OUTPUT_LLM_GUARDRAIL = os.getenv("ENABLE_OUTPUT_LLM_GUARDRAIL", "true").lower() == "true"
+<<<<<<< Updated upstream
 MAX_INPUT_CHARS  = int(os.getenv("MAX_INPUT_CHARS",  "12000"))
+=======
+MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "12000"))
+>>>>>>> Stashed changes
 MAX_OUTPUT_CHARS = int(os.getenv("MAX_OUTPUT_CHARS", "40000"))
 
 DISCLAIMER_TEXT = (
-    "Disclaimer: This AI-generated output is for informational purposes only and "
+    "Disclaimer: This right here! AI-generated output is for informational purposes only and "
     "must not be used as medical advice, diagnosis, prescribing guidance, or treatment "
     "recommendation. Please consult your doctor or healthcare provider before making "
     "any clinical decisions or enrolling in a clinical trial."
@@ -120,6 +139,12 @@ DISCLAIMER_TEXT = (
 SUPPORTED_CONDITIONS = {"diabetes", "breast cancer", "breast_cancer"}
 
 BANNED_OUTPUT_PATTERNS = [
+<<<<<<< Updated upstream
+=======
+    # Removed the generic mg/ml pattern — it fires on patient's own medication names
+    # (e.g. "Metformin 500 MG") which MedGemma legitimately cites.
+    # Prescriptive action verbs remain:
+>>>>>>> Stashed changes
     r"\btake\s+\d+",
     r"\bprescribe\b",
     r"\bstart medication\b",
@@ -1024,6 +1049,77 @@ def filter_mismatched_subtypes(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# STEP 3.6 — CONDITION-SUBTYPE FILTER
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mapping: if patient summary contains any of the "patient_has" terms,
+# remove any trial whose conditions+title ONLY mention the "exclude_if_only" terms
+# (i.e. the trial is for a different subtype and doesn't also cover the patient's type).
+_SUBTYPE_FILTER_RULES = [
+    # ── Diabetes ────────────────────────────────────────────────────────────────
+    {
+        "patient_has":     ["diabetes mellitus type 2", "type 2 diabetes", "t2dm", "t2d"],
+        "exclude_if_only": ["type 1 diabetes", "type 1 diabetes mellitus", "t1dm",
+                            "cystic fibrosis-related diabetes", "cfrd"],
+        "must_not_contain_patient_type": ["type 2", "t2"],
+    },
+    {
+        "patient_has":     ["diabetes mellitus type 2", "type 2 diabetes", "t2dm", "t2d"],
+        "exclude_if_only": ["prediabetic state", "pre diabetes", "prediabetes"],
+        "must_not_contain_patient_type": ["type 2 diabetes", "t2d"],
+    },
+    # ── Breast cancer subtypes ──────────────────────────────────────────────────
+    # Drop HER2-positive-only trials for HER2-low / HER2-negative patients
+    {
+        "patient_has":     ["her2 low", "her2-low", "her2 negative", "her2-negative",
+                            "her2 neg", "fish non-amplified"],
+        "exclude_if_only": ["her2-positive", "her2 positive", "her2 overexpression",
+                            "her2+ breast", "her2-enriched",
+                            "her-2-positive", "her-2 positive", "her-2+ breast"],
+        "must_not_contain_patient_type": ["her2 low", "her2-low", "her2 negative",
+                                          "her2-negative", "her2 neg", "her-2-negative",
+                                          "her-2 negative"],
+    },
+    # Drop triple-negative (TNBC) trials for ER+ or PR+ patients
+    {
+        "patient_has":     ["estrogen receptor positive", "er positive", "er+",
+                            "progesterone receptor positive", "pr positive", "pr+"],
+        "exclude_if_only": ["triple negative", "triple-negative", "tnbc",
+                            "triple neg breast"],
+        "must_not_contain_patient_type": ["hormone receptor positive", "hr positive",
+                                          "er positive", "estrogen receptor"],
+    },
+]
+
+def filter_mismatched_subtypes(patient_summary: str, trials: list[dict]) -> list[dict]:
+    """Remove trials clearly targeting a disease subtype different from the patient's."""
+    summary_lower = patient_summary.lower()
+    filtered = []
+    for trial in trials:
+        conditions_lower = str(trial.get("conditions", "")).lower()
+        title_lower = (trial.get("study_title") or trial.get("title", "")).lower()
+        combined = f"{conditions_lower} {title_lower}"
+
+        skip = False
+        for rule in _SUBTYPE_FILTER_RULES:
+            patient_matches = any(p in summary_lower for p in rule["patient_has"])
+            if not patient_matches:
+                continue
+            trial_has_wrong_subtype = any(e in combined for e in rule["exclude_if_only"])
+            trial_also_covers_patient = any(p in combined for p in rule["must_not_contain_patient_type"])
+            if trial_has_wrong_subtype and not trial_also_covers_patient:
+                logger.info(
+                    f"Subtype filter: dropping {trial.get('nct_number')} "
+                    f"(conditions: {conditions_lower[:80]})"
+                )
+                skip = True
+                break
+        if not skip:
+            filtered.append(trial)
+    return filtered
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — GENERATE RECOMMENDATION
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1088,6 +1184,7 @@ def filter_to_eligible_only(gemini_text: str, medgemma_text: str) -> str:
                 logger.info(f"Dropping Trial {trial_num}: one or both judges said INELIGIBLE")
                 continue
 
+<<<<<<< Updated upstream
         kept.append(block)
 
     if not kept:
@@ -1101,13 +1198,28 @@ def generate_recommendation(
     retrieved_trials: list[dict],
     detected_conditions: list[str] | None = None,
 ) -> str:
+=======
+_EC_LIMIT = 1500   # chars per trial for eligibility_criteria
+_IV_LIMIT = 300    # chars per trial for interventions
+_SU_LIMIT = 300    # chars per trial for brief_summary
+_CO_LIMIT = 150    # chars per trial for conditions (can be huge lists)
+
+def _trim(val, limit: int) -> str:
+    s = str(val) if val and str(val).strip() not in ("", "nan", "None") else "N/A"
+    return s[:limit] + "…" if len(s) > limit else s
+
+def generate_recommendation(patient_summary: str, retrieved_trials: list[dict]) -> str:
+>>>>>>> Stashed changes
     context = "\n\n".join([
         f"Trial {i + 1}:\n"
         f"  NCT ID        : {t.get('nct_number', 'N/A')}\n"
         f"  Title         : {t.get('study_title') or t.get('title', 'N/A')}\n"
         f"  Condition     : {_trim(t.get('conditions'), _CO_LIMIT)}\n"
+<<<<<<< Updated upstream
         f"  Disease       : {t.get('disease', 'N/A')}\n"
         f"  Disease Type  : {t.get('disease_type', 'N/A')}\n"
+=======
+>>>>>>> Stashed changes
         f"  Phase         : {t.get('phase', 'N/A')}\n"
         f"  Status        : {t.get('recruitment_status', 'N/A')}\n"
         f"  Age Range     : {t.get('min_age', 'N/A')} – {t.get('max_age', 'N/A')}\n"
@@ -1138,6 +1250,7 @@ def generate_recommendation(
         "CORE RULES — follow ALL of these exactly:\n\n"
         "1. USE ONLY THE PROVIDED CONTEXT. Do not apply your training knowledge about "
         "trials, additional eligibility criteria, or medical standards beyond what is "
+<<<<<<< Updated upstream
         "written in the eligibility criteria text provided.\n\n"
         "2. Diagnosis synonyms are identical: 'Malignant neoplasm of breast' = 'Breast cancer'. "
         "'HER2 low carcinoma (IHC 2+, FISH non-amplified)' = 'HER2-low' = 'HER2 negative'. "
@@ -1159,6 +1272,38 @@ def generate_recommendation(
         "- 'Advanced' or 'metastatic' trials listing early-stage are open to early-stage patients.\n"
         "- HER2-low (IHC 2+, FISH non-amplified) satisfies 'HER2-negative' criteria."
         + multi_condition_note
+=======
+        "written in the eligibility criteria text provided. If a criterion is not "
+        "listed in the provided eligibility criteria text, ignore it completely.\n\n"
+        "2. Diagnosis synonyms are identical: 'Malignant neoplasm of breast' = 'Breast cancer'. "
+        "'HER2 low carcinoma (IHC 2+, FISH non-amplified)' = 'HER2-low' = 'HER2 negative'. "
+        "'Estrogen receptor positive tumor' = 'ER+' = 'hormone receptor positive'.\n\n"
+        "3. Numeric thresholds: ≥X means value must be X or higher. ≤X means X or lower. "
+        "Never reverse direction.\n\n"
+        "4. MISSING DATA RULE: if the patient profile does NOT mention a specific lab value "
+        "or secondary criterion, DO NOT LIST IT AT ALL. Do not write about it. Assume it is met.\n\n"
+        "5. Concerns section: ONLY list a concern if the patient profile EXPLICITLY shows "
+        "a value that fails a criterion listed in the provided eligibility criteria. "
+        "If nothing fails, write 'None'.\n\n"
+        "6. ELIGIBLE: patient's diagnosis matches + age/sex within stated range + "
+        "no explicit failures in documented values. This is the DEFAULT verdict when "
+        "the patient fits the trial's primary disease focus.\n\n"
+        "7. BORDERLINE: only when a documented patient value is close to but may not meet "
+        "a stated threshold (e.g. documented age 52 vs criterion age ≥55).\n\n"
+        "8. INELIGIBLE: ONLY when the patient has a wrong disease type that the trial "
+        "explicitly excludes (e.g. patient is ER+ but trial requires triple-negative only), "
+        "or age/sex is definitively outside the stated range.\n\n"
+        "IMPORTANT: Do not mark INELIGIBLE just because data is missing or unspecified. "
+        "Absence of information is NOT a disqualifier.\n\n"
+        "ADDITIONAL RULES:\n"
+        "- If a patient is currently taking the same drug(s) that the trial is studying "
+        "(e.g. patient is on letrozole and trial tests letrozole), this is NOT disqualifying "
+        "unless the criteria explicitly say 'no prior exposure to [drug]'. "
+        "Trials often enroll patients already on the drug.\n"
+        "- 'Advanced' or 'metastatic' trials that also list early-stage breast cancer in their "
+        "conditions are open to early-stage patients — do not mark INELIGIBLE for stage alone.\n"
+        "- HER2-low (IHC 2+, FISH non-amplified) satisfies 'HER2-negative' criteria."
+>>>>>>> Stashed changes
     )
 
     user_prompt = f"""PATIENT PROFILE:
@@ -1171,6 +1316,7 @@ For EACH trial write your assessment in this exact format:
 
 **Trial [N]: [NCT ID] — [Title]**
 VERDICT: ELIGIBLE / BORDERLINE / INELIGIBLE
+<<<<<<< Updated upstream
 
 Clinical Rationale:
 [Write 3-4 sentences reasoning like a clinician, not a checklist.
@@ -1248,6 +1394,86 @@ def medgemma_judge(
         f"- BORDERLINE: likely fits but one criterion needs clinician confirmation.\n"
         f"- No extra text outside the Trial lines."
     )
+=======
+
+Matched Criteria:
+- [2-4 criteria the patient clearly meets based on their documented data]
+
+Concerns:
+- [ONLY criteria the patient's profile explicitly fails — if none, write None]
+
+Intervention Summary: [one sentence: what would the patient actually do/receive]
+Clinical Rationale: [2 sentences: why this trial fits or does not fit this specific patient]
+---"""
+
+    full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+    try:
+        vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
+        model = GenerativeModel(GUARDRAIL_MODEL)
+        response = model.generate_content(
+            full_prompt,
+            generation_config=GenerationConfig(
+                temperature=0.4,
+                max_output_tokens=8192,
+            ),
+        )
+        text = response.text.strip()
+        logger.info(f"Gemini recommendation length: {len(text)} chars")
+        return text
+    except Exception as e:
+        logger.error(f"Gemini recommendation generation failed: {e}")
+        raise
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 4B — MEDGEMMA AS JUDGE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_analysis: str) -> str:
+    """
+    Use MedGemma as a second-opinion judge on Gemini 2.5 Flash's per-trial verdicts.
+    Returns one AGREE/DISAGREE line per trial.
+    """
+    trial_lines = "\n".join([
+        f"Trial {i+1}: {t.get('nct_number','?')} — {t.get('study_title') or t.get('title','?')}"
+        for i, t in enumerate(retrieved_trials)
+    ])
+
+    # Keep Gemini analysis short — just the verdict lines — to stay within MedGemma context
+    verdict_lines = []
+    for line in gemini_analysis.splitlines():
+        if re.search(r"VERDICT\s*:", line, re.IGNORECASE) or re.match(r"\*\*Trial\s+\d+", line.strip()):
+            verdict_lines.append(line.strip())
+    verdicts_summary = "\n".join(verdict_lines) if verdict_lines else gemini_analysis[:800]
+
+    prompt = (
+        f"<start_of_turn>user\n"
+        f"You are a board-certified clinical trials physician. "
+        f"Read the patient profile and each trial's details, then give YOUR OWN independent "
+        f"eligibility verdict. Do NOT look at any other AI's opinion — form your own judgment.\n\n"
+        f"PATIENT SUMMARY:\n{patient_summary}\n\n"
+        f"TRIALS TO EVALUATE:\n{trial_lines}\n\n"
+        f"For each trial write in this exact format:\n"
+        f"**Trial N:** ELIGIBLE / INELIGIBLE / BORDERLINE — [2-3 sentences citing the specific "
+        f"patient data (lab values, diagnosis, age, stage) and the trial's key inclusion or "
+        f"exclusion criterion that drove your verdict. Be clinical and precise.]\n\n"
+        f"Rules:\n"
+        f"- Base your verdict ONLY on the patient profile above and the trial names/conditions listed.\n"
+        f"- Cite specific values: 'HbA1c 8.1%', 'BMI 31.8', 'Stage II ER+', 'ECOG 0'.\n"
+        f"- ELIGIBLE: patient's documented data clearly fits the trial's primary focus.\n"
+        f"- INELIGIBLE: patient has a documented value or diagnosis that explicitly conflicts.\n"
+        f"- BORDERLINE: patient likely fits but one criterion needs clinician confirmation.\n"
+        f"- No extra text outside the Trial lines.\n"
+        f"<end_of_turn>\n"
+        f"<start_of_turn>model\n"
+    )
+
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request as AuthRequest
+        import requests as _req
+>>>>>>> Stashed changes
 
     try:
         region         = os.getenv("GCP_REGION",         "us-central1")
@@ -1260,6 +1486,7 @@ def medgemma_judge(
             f"/locations/{region}/endpoints/{endpoint_id}:predict"
         )
 
+<<<<<<< Updated upstream
         credentials, _ = google.auth.default(
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
@@ -1287,9 +1514,18 @@ def medgemma_judge(
 
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
+=======
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(AuthRequest())
 
+        headers = {"Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json"}
+        payload = {"instances": [{"prompt": prompt, "max_tokens": 512, "temperature": 0.1}]}
+>>>>>>> Stashed changes
+
+        response = _req.post(url, headers=headers, json=payload, timeout=60)
         result = response.json()["predictions"][0]
 
+<<<<<<< Updated upstream
         # chatCompletions response parsing
         if isinstance(result, dict):
             choices = result.get("choices", [])
@@ -1306,6 +1542,17 @@ def medgemma_judge(
             text = str(result)
 
         text = text.strip()
+=======
+        text = (result.get("generated_text") or result.get("output") or str(result)) if isinstance(result, dict) else str(result)
+
+        # Strip prompt echo
+        for marker in ("<start_of_turn>model", "Output:"):
+            if marker in text:
+                text = text.split(marker, 1)[1]
+                break
+        text = re.sub(r"<end_of_turn>.*", "", text, flags=re.DOTALL).strip()
+
+>>>>>>> Stashed changes
         logger.info(f"MedGemma judge output ({len(text)} chars): {text[:300]}")
         return text if text else "(MedGemma returned empty response)"
 
@@ -1443,12 +1690,20 @@ def rag_pipeline(patient_summary: str) -> dict:
             pii_hits=pii_hits,
         )
 
+<<<<<<< Updated upstream
     # ── Step 3.6: Subtype filter BEFORE reranking ─────────────────────────────
     logger.info("Step 3.6: Filtering mismatched subtypes...")
     candidates = filter_mismatched_subtypes(
         patient_summary, candidates, clinical_context
     )
     logger.info(f"After subtype filter: {len(candidates)} candidates")
+=======
+    # Step 3.6: Remove trials for the wrong disease subtype BEFORE reranking
+    # so the reranker selects top-K from a clean pool, not wasting slots on mismatched subtypes.
+    logger.info("Step 3.6: Filtering mismatched subtypes from all candidates...")
+    candidates = filter_mismatched_subtypes(patient_summary, candidates)
+    logger.info(f"After subtype filter: {len(candidates)} candidates remain")
+>>>>>>> Stashed changes
 
     if not candidates:
         return safe_guardrail_response(
@@ -1458,7 +1713,11 @@ def rag_pipeline(patient_summary: str) -> dict:
             pii_hits=pii_hits,
         )
 
+<<<<<<< Updated upstream
     # ── Step 3.5: Rerank (multi-condition aware) ──────────────────────────────
+=======
+    # Step 3.5: Rerank the filtered candidates → top K
+>>>>>>> Stashed changes
     logger.info(f"Step 3.5: Reranking {len(candidates)} -> top {RERANK_TOP_K}...")
     reranked_trials = rerank_trials_multi_condition(
         patient_summary,
@@ -1478,10 +1737,15 @@ def rag_pipeline(patient_summary: str) -> dict:
 
     # ── Step 4: Generate recommendation ──────────────────────────────────────
     logger.info("Step 4: Generating recommendation...")
+<<<<<<< Updated upstream
     recommendation    = generate_recommendation(
         patient_summary, reranked_trials, detected_conditions
     )
     raw_gemini_output = recommendation
+=======
+    recommendation = generate_recommendation(patient_summary, reranked_trials)
+    raw_medgemma_output = recommendation  # preserve before any guardrail replaces it
+>>>>>>> Stashed changes
 
     # ── Step 5A: Policy checks ────────────────────────────────────────────────
     logger.info("Step 5A: Policy-based output guardrails...")
@@ -1543,6 +1807,7 @@ def rag_pipeline(patient_summary: str) -> dict:
             guardrail_meta["reason"] = str(e)
             guardrail_meta["flag_reasons"].append(f"output_llm_guardrail_error: {e}")
 
+<<<<<<< Updated upstream
     # ── Step 5D: MedGemma judge ───────────────────────────────────────────────
     logger.info("Step 5D: MedGemma second-opinion judge...")
     medgemma_judgment = medgemma_judge(patient_summary, reranked_trials, raw_gemini_output)
@@ -1553,6 +1818,12 @@ def rag_pipeline(patient_summary: str) -> dict:
     if recommendation and not recommendation.startswith("The generated recommendation did not pass"):
         recommendation = filter_to_eligible_only(recommendation, medgemma_judgment)
         logger.info(f"Final recommendation: {len(recommendation)} chars")
+=======
+    # Step 5D: MedGemma as judge — second opinion on Gemini's verdicts
+    logger.info("Step 5D: Running MedGemma as judge...")
+    medgemma_judgment = medgemma_judge(patient_summary, reranked_trials, raw_medgemma_output)
+    logger.info(f"MedGemma judge output: {medgemma_judgment[:300]}")
+>>>>>>> Stashed changes
 
     logger.info("RAG Pipeline complete")
     logger.info("=" * 60)
@@ -1562,11 +1833,19 @@ def rag_pipeline(patient_summary: str) -> dict:
         "detected_conditions":      detected_conditions,
         "is_dual_condition":        is_dual_condition,
         "candidates_before_rerank": candidates,
+<<<<<<< Updated upstream
         "retrieved_trials":         reranked_trials,
         "recommendation":           recommendation,
         "raw_gemini_output":        raw_gemini_output,
         "medgemma_judgment":        medgemma_judgment,
         "guardrail":                guardrail_meta,
+=======
+        "retrieved_trials": reranked_trials,
+        "recommendation": recommendation,
+        "raw_medgemma_output": raw_medgemma_output,
+        "medgemma_judgment": medgemma_judgment,
+        "guardrail": guardrail_meta,
+>>>>>>> Stashed changes
     }
 
 
@@ -1595,3 +1874,5 @@ def rag_pipeline_for_patient(patient_id: str) -> dict:
     summary = get_patient_summary(patient_id)
     logger.info(f"Patient summary: {summary}")
     return rag_pipeline(summary)
+
+rag_pipeline_for_patient("ceec0dea-34f7-4ee4-8c7d-d302e8756672")
