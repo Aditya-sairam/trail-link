@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "triallink-eval-001")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "My First Project")
 PATIENT_DB     = "patient-db-dev"
 RESULTS_DIR    = os.path.join(os.path.dirname(__file__), "test_results")
 

@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "project-61ec6551-6e90-478b-825")
-MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "triallinkai")
+MODEL_PROJECT_ID = os.getenv("MODEL_PROJECT_ID", "project-61ec6551-6e90-478b-825")
 GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 ### 
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv(
@@ -93,7 +93,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-7c7b8b28-6e03-4629-a125-8a54cbe9f2dd",
+    "mg-endpoint-d1627430-1452-422e-8c07-9cff4b95b206",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
@@ -1143,8 +1143,8 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
 
     try:
         region         = os.getenv("GCP_REGION",          "us-central1")
-        project_number = os.getenv("MODEL_PROJECT_NUMBER", "428692943682")
-        project_id     = os.getenv("MODEL_PROJECT_ID",     "triallinkai")
+        project_number = os.getenv("MODEL_PROJECT_NUMBER", "231142569208")
+        project_id     = os.getenv("MODEL_PROJECT_ID",     "project-61ec6551-6e90-478b-825")
         endpoint_id    = MEDGEMMA_ENDPOINT_ID
 
         dedicated_domain = f"mg-endpoint-7c7b8b28-6e03-4629-a125-8a54cbe9f2dd.us-central1-163063109749.prediction.vertexai.goog"

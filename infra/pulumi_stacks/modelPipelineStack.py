@@ -29,7 +29,7 @@ class ModelPipelineStack:
             bucket=self.function_bucket.name,
             source=pulumi.FileArchive("../../models/alert_function")
         )
-        # self._create_firestore()
+        self._create_firestore()
         self.pub_sub_service         = self._create_pub_sub_for_patient_request()
         self.eval_notification_topic = self._create_eval_notification_topic()
         self.rag_service_function    = self._deploy_cloud_function() 

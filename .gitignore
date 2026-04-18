@@ -38,3 +38,4 @@ test_results/
 # OS
 .DS_Store
 Thumbs.dbsynthea-with-dependencies.jar
+tests/prompt_testing/tests/
