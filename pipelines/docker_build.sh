@@ -8,7 +8,7 @@
 set -e  # Exit immediately if a command fails
 
 # ===== CONFIG =====
-PROJECT_ID="project-1e322b00-efe1-41f8-8d9"
+PROJECT_ID="project-61ec6551-6e90-478b-825"
 REGION="us-central1"
 REPO_NAME="data-pipeline-repo-dev"
 IMAGE_NAME="datapipeline-api"
