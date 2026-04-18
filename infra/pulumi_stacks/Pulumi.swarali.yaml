@@ -1,1 +1,5 @@
 encryptionsalt: v1:j9q7fu3zHCA=:v1:425SAvtvt63B1hcU:qtHBnl4gYzlHqTNv//pIamh5t3r7lw==
+config:
+  gcp:project: project-61ec6551-6e90-478b-825
+  clinical-trial-platform:deploy_pipeline: "true"
+  clinical-trial-platform:deploy_patient: "true"
