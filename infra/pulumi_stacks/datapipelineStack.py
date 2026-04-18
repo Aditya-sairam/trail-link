@@ -16,7 +16,7 @@ class DataPipelineStack:
         self._create_artifact_registry()
         self.vector_index = self._create_vector_search_index()       
         self.vector_endpoint = self._create_vector_search_endpoint() 
-        # self._deploy_index_to_endpoint() 
+        self._deploy_index_to_endpoint() 
         self.airflow_service = self._create_airflow_cloudrun_service() or None
         self._keep_alive_ping_for_airflow()
         
@@ -100,7 +100,7 @@ class DataPipelineStack:
                     "max_instance_count": 5,
                 },
                 "containers": [{
-                    "image": "us-central1-docker.pkg.dev/project-1e322b00-efe1-41f8-8d9/data-pipeline-repo-dev/datapipeline-api:latest",
+                    "image": "us-central1-docker.pkg.dev/project-61ec6551-6e90-478b-825/data-pipeline-repo-dev/datapipeline-api:latest",
                     "ports": {
                         "container_port": 8081,
                     },

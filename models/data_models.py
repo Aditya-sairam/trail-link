@@ -173,7 +173,7 @@ class Patient(BaseModel):
             summary_parts.append(f"Current medications: {meds_str}.")
         
         # Recent key observations (you can filter for specific important ones)
-        recent_obs = self.get_recent_observations(days=90)
+        recent_obs = self.get_recent_observations(days=365)
         if recent_obs:
             obs_str = "; ".join([
                 f"{o.display_name}: {o.value} {o.unit}" if o.value 

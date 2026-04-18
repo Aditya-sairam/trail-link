@@ -1,0 +1,11 @@
+{
+  "patient_id": "96f10015-c292-410d-a098-deb9e451af42",
+  "condition": "diabetes",
+  "error": "1 validation error for Patient\ndemographics.firebase_uid\n  Field required [type=missing, input_value={'age': 65, 'patient_id':...MA', 'city': 'Millbury'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing",
+  "overall_verdict": "FAILED",
+  "guardrail": {
+    "status": "error"
+  },
+  "evaluated_at": "2026-04-13T19:19:41.077238",
+  "elapsed_seconds": 0.9
+}

@@ -1,0 +1,7 @@
+config:
+  gcp:project: triallinkai
+  gcp:region: us-central1
+  deploy_model: true
+  deploy_pipeline: false
+  deploy_patient: false
+encryptionsalt: v1:US1ybJ1/S3Y=:v1:6JlehT8a703NQJYu:SEWrRAbntm045ijvEBgWzMlkRS9EKQ==
