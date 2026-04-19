@@ -110,7 +110,10 @@ jobs:
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
         continue-on-error: true 
-        run: pulumi up --yes --stack dev
+        run: pulumi up --yes --stack dev \
+               --exclude urn:pulumi:dev::clinical-trial-platform::gcp:vertex/aiEndpointWithModelGardenDeployment:AiEndpointWithModelGardenDeployment::deploy \
+               --exclude urn:pulumi:dev::clinical-trial-platform::gcp:firestore/database:Database::dev-clinical-trials-suggestions-db
+
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Job 3: Alert on failure — GitHub Issue + @mention team
