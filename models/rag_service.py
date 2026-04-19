@@ -1140,7 +1140,7 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
         f"<end_of_turn>\n"
         f"<start_of_turn>model\n"
     )
-
+###Random change
     try:
         region         = os.getenv("GCP_REGION",          "us-central1")
         project_number = os.getenv("MODEL_PROJECT_NUMBER", "231142569208")
