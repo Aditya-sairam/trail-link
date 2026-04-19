@@ -3,7 +3,7 @@ import pulumi
 import pulumi_gcp as gcp
 from typing import Optional
 
-## Custom metric types — must match what alert_function/main.py writes
+# Custom metric types — must match what alert_function/main.py writes
 METRIC_AVG_SCORE        = "custom.googleapis.com/triallink/rag_avg_score"
 METRIC_NOT_ELIGIBLE_PCT = "custom.googleapis.com/triallink/not_eligible_percentage"
 METRIC_BREACHES_COUNT   = "custom.googleapis.com/triallink/alert_breaches_count"
