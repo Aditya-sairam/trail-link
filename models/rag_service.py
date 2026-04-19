@@ -42,7 +42,7 @@ Returned pipeline result:
     }
 """
 
-##
+###
 
 from __future__ import annotations
 
