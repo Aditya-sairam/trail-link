@@ -2,6 +2,6 @@ encryptionsalt: v1:i4KCm5lMBHo=:v1:LT8E3RmuGCX0RJHI:IN9fxVozD8+srLk2tQ/7z851Wz16
 config:
   gcp:project: project-61ec6551-6e90-478b-825
   gcp:region: us-central1
-  deploy_model: false
-  deploy_pipeline: true
-  deploy_patient: true
+  clinical-trial-platform:deploy_model: "true"
+  clinical-trial-platform:deploy_patient: "true"
+  clinical-trial-platform:deploy_pipeline: "true"
