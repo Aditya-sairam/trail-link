@@ -567,7 +567,7 @@ def trial_to_text(trial: dict) -> str:
         f"Summary: {_get('brief_summary')}."
     )
 
-
+###
 # ══════════════════════════════════════════════════════════════════════════════
 # STEP 1A — LLM CLINICAL CONTEXT ENRICHER (NEW)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1140,7 +1140,7 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
         f"<end_of_turn>\n"
         f"<start_of_turn>model\n"
     )
-
+###Random change
     try:
         region         = os.getenv("GCP_REGION",          "us-central1")
         project_number = os.getenv("MODEL_PROJECT_NUMBER", "231142569208")
