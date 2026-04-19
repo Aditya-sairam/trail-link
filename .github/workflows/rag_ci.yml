@@ -107,6 +107,10 @@ jobs:
       - name: Login to Pulumi GCS backend
         run: pulumi login gs://pulumi-state-project-61ec6551-6e90-478b-825
 
+      - name: Refresh Pulumi state
+        working-directory: ./infra/pulumi_stacks
+        run: pulumi refresh --yes --stack dev
+
       - name: Deploy with Pulumi
         working-directory: ./infra/pulumi_stacks
         continue-on-error: true 

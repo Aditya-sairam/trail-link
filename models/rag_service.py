@@ -42,6 +42,8 @@ Returned pipeline result:
     }
 """
 
+##
+
 from __future__ import annotations
 
 import base64
@@ -93,7 +95,7 @@ TRAIL_SUGGESTIONS_STORE = os.getenv("TRAIL_SUGGESTIONS_STORE", "clinical-trials-
 
 MEDGEMMA_ENDPOINT_ID = os.getenv(
     "MEDGEMMA_ENDPOINT_ID",
-    "mg-endpoint-d1627430-1452-422e-8c07-9cff4b95b206",
+    "mg-endpoint-6c169074-e136-4fcd-836a-054da4fa9428",
 )
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-005")
@@ -1147,7 +1149,7 @@ def medgemma_judge(patient_summary: str, retrieved_trials: list[dict], gemini_an
         project_id     = os.getenv("MODEL_PROJECT_ID",     "project-61ec6551-6e90-478b-825")
         endpoint_id    = MEDGEMMA_ENDPOINT_ID
 
-        dedicated_domain = f"mg-endpoint-7c7b8b28-6e03-4629-a125-8a54cbe9f2dd.us-central1-163063109749.prediction.vertexai.goog"
+        dedicated_domain = f"mg-endpoint-6c169074-e136-4fcd-836a-054da4fa9428.us-central1-728978688292.prediction.vertexai.goog"
         url = (
             f"https://{dedicated_domain}/v1/projects/{project_id}"
             f"/locations/{region}/endpoints/{endpoint_id}:predict"
